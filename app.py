@@ -1097,7 +1097,6 @@ OSINT_DB = {
     ("Middle East", "missile strike"): [
         {
             "type": "video",
-            "embed_id": "dQw4w9WgXcQ",  # placeholder - real: Reuters ME coverage
             "embed_id": "F1GKKNL1XNY",
             "source": "Al Jazeera English",
             "source_type": "news_agency",
@@ -1799,7 +1798,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     <button class="layer-btn" onclick="setLayer('trade',this)">🚢 TRADE</button>
     <button class="layer-btn" onclick="setLayer('travel',this)">✈ TRAVEL</button>
     <button class="layer-btn" onclick="setLayer('alignment',this)">🌐 ALIGNMENT</button>
-    <button class="osint-toggle" id="osint-toggle-btn" onclick="toggleOsintLayer(this)">🛰 OSINT EVIDENCE</button>
+    <button class="osint-toggle" id="osint-toggle-btn" onclick="toggleOsintLayer(this)">🛰 OSINT</button>
   </div>
   <div class="hdr-right">
     <select class="lang-sel" onchange="setLang(this.value)">
@@ -2186,33 +2185,39 @@ function toggleClustering(enabled){
 }
 
 // ════════════ LIVE EVENTS MAP ════════════
-function renderMap(events){
-  if(!mLayer||!clusterLayer)return;
-  mLayer.clearLayers();
-  clusterLayer.clearLayers();
-  events.forEach(e=>{
-    const age=e.age_minutes??999;
-    const isHot=age<10;
-    const conf=e.confidence||70;
-    const cc=confClass(conf);
-    const color=age>1440?'faded':cc;
-    const hotCls=isHot?' em-hot':'';
-    const justTag=isHot?`<div class="just-tag">JUST DETECTED</div>`:'';
-    const icon=L.divIcon({className:'',html:`<div class="just-wrap">${justTag}<div class="em ${color}${hotCls}"></div></div>`,iconSize:[11,11],iconAnchor:[5,5]});
-    const precLoc=e.precise_location||e.region;
-    const unc=e.uncertainty?`<div style="color:#f5c518;font-size:.44rem;margin-top:3px;border-top:1px solid #0d3348;padding-top:3px">⚠ ${e.uncertainty}</div>`:'';
-    const srcLink=e.url&&e.url!=='#'?`<a href="${e.url}" target="_blank" style="color:#00e5ff;font-size:.5rem">↗ SOURCE</a>`:'';
-    const confBadgeColor=confColor(conf);
-    const popup=`
-<div style="font-family:'Orbitron',sans-serif;font-size:.55rem;letter-spacing:.12em;color:#ff6b1a;margin-bottom:3px">${e.type.toUpperCase()}${isHot?'<span style="color:#ff2233;margin-left:5px;font-size:.38rem">● NOW</span>':''}</div>
-<div style="display:flex;justify-content:space-between;color:#4a7a99;font-size:.54rem;margin:2px 0"><span>LOCATION</span><span style="color:#00e5ff">${precLoc}</span></div>
-<div style="display:flex;justify-content:space-between;color:#4a7a99;font-size:.54rem;margin:2px 0"><span>CONFIDENCE</span><span style="color:${confBadgeColor}">${conf}% · ${confLabel(conf)}</span></div>
-<div style="display:flex;justify-content:space-between;color:#4a7a99;font-size:.54rem;margin:2px 0"><span>DETECTED</span><span style="color:#c8e8f8">${timeSince(e.time_iso)}</span></div>
-<div style="margin-top:5px;padding-top:4px;border-top:1px solid #0d3348;font-size:.56rem;line-height:1.35">${e.summary}</div>
-${unc}
-<div style="margin-top:5px;display:flex;justify-content:space-between;align-items:center">${srcLink}<div class="pop-analyze" onclick="openIntel('${e.id}')">◈ FULL ANALYSIS</div></div>`;
-    const marker=L.marker([e.lat,e.lon],{icon}).bindPopup(popup,{maxWidth:300});
-    mLayer.addLayer(marker);
+function renderMap(events) {
+  if(!mLayer || !clusterLayer) return;
+  mLayer.clearLayers(); clusterLayer.clearLayers();
+  events.forEach(e => {
+    const age = e.age_minutes ?? 999, isHot = age < 10, conf = e.confidence || 70;
+    const cc = confClass(conf), color = age > 1440 ? 'faded' : cc;
+    const hotCls = isHot ? ' em-hot' : '';
+    const justTag = isHot ? '<div class="just-tag">JUST DETECTED</div>' : '';
+    const evMeta = (osintVisible && osintIndex[e.id]) ? osintIndex[e.id] : null;
+    const evBadge = evMeta ? '<div class="ev-badge ' + evMeta.type + '">' + (evMeta.type==='video'?'▶':evMeta.type==='satellite'?'🛰':'📷') + '</div>' : '';
+    const wrapCls = evMeta ? 'ev-marker-wrap' : 'just-wrap';
+    const icon = L.divIcon({className:'',html:'<div class="' + wrapCls + '">' + justTag + '<div class="em ' + color + hotCls + '"></div>' + evBadge + '</div>',iconSize:[16,16],iconAnchor:[5,5]});
+    const precLoc = e.precise_location || e.region;
+    const unc = e.uncertainty ? '<div style="color:#f5c518;font-size:.44rem;margin-top:3px;border-top:1px solid #0d3348;padding-top:3px">⚠ ' + e.uncertainty + '</div>' : '';
+    const srcLink = e.url && e.url !== '#' ? '<a href="' + e.url + '" target="_blank" style="color:#00e5ff;font-size:.5rem">↗ SOURCE</a>' : '';
+    const confBadgeColor = confColor(conf);
+    const osintHint = evMeta ? '<div style="color:#9966ff;font-family:var(--mono);font-size:.44rem;margin-top:4px;border-top:1px solid rgba(153,102,255,.3);padding-top:3px">' + (evMeta.source_icon||'🔍') + ' VISUAL EVIDENCE — click for intel</div>' : '';
+    const popup = '<div style="font-family:Orbitron,sans-serif;font-size:.55rem;letter-spacing:.12em;color:#ff6b1a;margin-bottom:3px">' + e.type.toUpperCase() + (isHot?'<span style="color:#ff2233;margin-left:5px;font-size:.38rem">● NOW</span>':'') + '</div><div style="display:flex;justify-content:space-between;color:#4a7a99;font-size:.54rem;margin:2px 0"><span>LOCATION</span><span style="color:#00e5ff">' + precLoc + '</span></div><div style="display:flex;justify-content:space-between;color:#4a7a99;font-size:.54rem;margin:2px 0"><span>CONFIDENCE</span><span style="color:' + confBadgeColor + '">' + conf + '% · ' + confLabel(conf) + '</span></div><div style="margin-top:5px;padding-top:4px;border-top:1px solid #0d3348;font-size:.56rem;line-height:1.35">' + e.summary + '</div>' + unc + osintHint + '<div style="margin-top:5px;display:flex;justify-content:space-between;align-items:center">' + srcLink + '<div class="pop-analyze" onclick="openIntel(' + "'" + e.id + "'" + ')">◈ FULL ANALYSIS</div></div>';
+    const mk = L.marker([e.lat,e.lon],{icon}).bindPopup(popup,{maxWidth:300});
+    if(evMeta) {
+      mk.on('mouseover', function() {
+        clearTimeout(hoverTimer);
+        hoverTimer = setTimeout(() => {
+          const el = this.getElement(); if(!el) return; removeHoverPreview();
+          const thumb = evMeta.thumbnail || evMeta.image_url || '';
+          const p = document.createElement('div'); p.className='ev-hover-preview'; p.id='ev-hover-preview';
+          p.innerHTML = (thumb?'<img class="ev-hover-thumb" src="'+thumb+'" onerror="this.style.display='none'"/>':'<div class="ev-hover-thumb-video">▶</div>') + '<div class="ev-hover-meta"><div class="ev-hover-type">'+evMeta.type.toUpperCase()+'</div><div class="ev-hover-src">'+(evMeta.source_icon||'🔍')+' '+(evMeta.source||'').slice(0,22)+'</div></div>';
+          el.style.position='relative'; el.appendChild(p);
+        }, 280);
+      });
+      mk.on('mouseout', function() { clearTimeout(hoverTimer); setTimeout(removeHoverPreview, 500); });
+    }
+    mLayer.addLayer(mk);
     clusterLayer.addLayer(L.marker([e.lat,e.lon],{icon}).bindPopup(popup,{maxWidth:300}));
   });
 }
@@ -2494,25 +2499,23 @@ function renderSupply(d){
 }
 
 // ════════════ FEED (confidence color) ════════════
-function renderFeed(events){
-  const el=document.getElementById('feed-list');if(!el)return;
-  if(!events.length){el.innerHTML='<div style="padding:9px;font-family:var(--mono);font-size:.5rem;color:#ff2233">NO EVENTS</div>';return}
-  el.innerHTML=events.slice(0,18).map(e=>{
-    const cc=confClass(e.confidence||70);const color=confColor(e.confidence||70);const label=confLabel(e.confidence||70);
+function renderFeed(events) {
+  const el = document.getElementById('feed-list'); if(!el) return;
+  if(!events.length){el.innerHTML='<div style="padding:9px;font-family:var(--mono);font-size:.5rem;color:#ff2233">NO EVENTS</div>';return;}
+  el.innerHTML = events.slice(0,18).map(e => {
+    const cc=confClass(e.confidence||70),color=confColor(e.confidence||70),label=confLabel(e.confidence||70);
     const age=e.age_minutes??999;
-    return`<div class="fi" onclick="openIntel('${e.id}')">
-<div class="fi-ind ${cc}"></div>
-<div>
-  <div class="fi-type">${e.type.toUpperCase()}${age<10?'<span style="color:#ff2233;margin-left:3px;font-size:.36rem">● NOW</span>':''}</div>
-  <div class="fi-loc">◈ ${e.precise_location||e.region}</div>
-  <div class="fi-reg">${e.region} · ${timeSince(e.time_iso)}</div>
-  <div class="fi-desc">${e.summary}</div>
-</div>
-<div>
-  <div class="fi-conf-badge" style="color:${color};border-color:${color}">${label}</div>
-  <div class="fi-src">${e.source}</div>
-</div>
-</div>`}).join('');
+    const evMeta=osintIndex[e.id];
+    const evidBadge=evMeta?'<span class="fi-osint-badge" title="'+evMeta.type+' evidence">'+(evMeta.source_icon||'🛰')+'</span>':'';
+    return '<div class="fi" onclick="openIntel(\\'' + e.id + '\\')">' +
+'<div class="fi-ind '+cc+'"></div>' +
+'<div><div class="fi-type">'+e.type.toUpperCase()+(age<10?'<span style="color:#ff2233;margin-left:3px;font-size:.36rem">● NOW</span>':'')+evidBadge+'</div>' +
+'<div class="fi-loc">◈ '+(e.precise_location||e.region)+'</div>' +
+'<div class="fi-reg">'+e.region+' · '+timeSince(e.time_iso)+'</div>' +
+'<div class="fi-desc">'+e.summary+'</div></div>' +
+'<div><div class="fi-conf-badge" style="color:'+color+';border-color:'+color+'">'+label+'</div><div class="fi-src">'+e.source+'</div></div>' +
+'</div>';
+  }).join('');
 }
 
 // ════════════ ALERTS + TRANSPARENCY + SUMMARY ════════════
@@ -2551,48 +2554,38 @@ function renderTravelPanel(data){
 }
 
 // ════════════ INTELLIGENCE PANEL ════════════
-async function openIntel(eid){
-  const panel=document.getElementById('intel-panel');
-  const body=document.getElementById('intel-body');
+async function openIntel(eid) {
+  const panel=document.getElementById('intel-panel'),body=document.getElementById('intel-body');
   panel.classList.add('open');
-  body.innerHTML='<div class="intel-loading"><span class="intel-spinner">◈</span>Fetching Claude AI analysis…</div>';
-  const [detail,stats]=await Promise.all([
-    fetch(`/api/event-detail/${eid}`).then(r=>r.json()).catch(()=>({})),
-    fetch(`/api/event-stats/${eid}`).then(r=>r.json()).catch(()=>({})),
+  body.innerHTML='<div class="intel-loading"><span class="intel-spinner">◈</span>Fetching analysis…</div>';
+  const [detail,stats,osintData]=await Promise.all([
+    fetch('/api/event-detail/'+eid).then(r=>r.json()).catch(()=>({})),
+    fetch('/api/event-stats/'+eid).then(r=>r.json()).catch(()=>({})),
+    fetch('/api/osint/'+eid).then(r=>r.json()).catch(()=>({has_evidence:false})),
   ]);
   const esc=detail.escalation_risk||'MODERATE';
-  const actors=(detail.related_actors||[]).map(a=>`<span class="actor-tag">${a}</span>`).join('')||'<span style="color:var(--muted);font-size:.42rem">—</span>';
+  const actors=(detail.related_actors||[]).map(a=>'<span class="actor-tag">'+a+'</span>').join('')||'<span style="color:var(--muted);font-size:.42rem">—</span>';
   const ev=allEvents.find(e=>e.id===eid)||{};
   const precLoc=ev.precise_location||detail.location||'Unknown';
-  const cc=confClass(ev.confidence||70);const ccColor=confColor(ev.confidence||70);const ccLabel=confLabel(ev.confidence||70);
-  const unc=ev.uncertainty?`<div class="intel-unc">⚠ ${ev.uncertainty}</div>`:'';
-  body.innerHTML=`
-<div class="intel-type">${(detail.event_type||'UNKNOWN').toUpperCase()}</div>
-<div class="intel-loc">◈ ${precLoc}${ev.region&&ev.region!==precLoc?`<span style="color:var(--muted);margin-left:4px">· ${ev.region}</span>`:''}</div>
-<div class="intel-det">Detected ${ev.time_iso?timeSince(ev.time_iso):'—'} · ${detail.source||'—'} · ${ev.source_count??'—'} source(s)</div>
-${unc}
-<div class="intel-4g">
-  <div class="intel-m"><div class="intel-m-l">CONFIDENCE</div><div class="intel-m-v" style="color:${ccColor}">${ev.confidence||'—'}%</div></div>
-  <div class="intel-m"><div class="intel-m-l">ASSESSMENT</div><div style="font-family:var(--disp);font-size:.62rem;font-weight:700;color:${ccColor};padding-top:2px">${ccLabel}</div></div>
-  <div class="intel-m"><div class="intel-m-l">ESC. RISK</div><div class="esc-badge esc-${esc}">${esc}</div></div>
-  <div class="intel-m"><div class="intel-m-l">NUMBERS</div><div class="intel-m-v" style="color:var(--cyan);font-size:.62rem">${detail.numbers_detected||ev.numbers||'—'}</div></div>
-</div>
-<div class="intel-stats-box">
-  <div class="intel-stats-h">◈ LAST 24H — ${precLoc}</div>
-  <div class="intel-stats-g">
-    <div class="stat-item"><div class="stat-l">REGION EVENTS</div><div class="stat-v">${stats.region_events_24h??'—'}</div></div>
-    <div class="stat-item"><div class="stat-l">SAME TYPE</div><div class="stat-v">${stats.same_type_24h??'—'}</div></div>
-    <div class="stat-item"><div class="stat-l">MISSILE STRIKES</div><div class="stat-v">${stats.missiles_24h??'—'}</div></div>
-    <div class="stat-item"><div class="stat-l">INTERCEPTIONS</div><div class="stat-v">${stats.interceptions_24h??'—'}</div></div>
-    <div class="stat-item"><div class="stat-l">AIRSTRIKES</div><div class="stat-v">${stats.airstrikes_24h??'—'}</div></div>
-    <div class="stat-item"><div class="stat-l">REGION GTI</div><div class="stat-v" style="color:${gtiColor(stats.region_gti||0)}">${stats.region_gti??'—'}</div></div>
-  </div>
-</div>
-<div class="intel-sec"><div class="intel-sec-h">TACTICAL ASSESSMENT</div><div class="intel-text">${detail.tactical_assessment||'—'}</div></div>
-<div class="intel-sec"><div class="intel-sec-h">CONTEXT</div><div class="intel-text">${detail.context||'—'}</div></div>
-<div class="intel-sec"><div class="intel-sec-h">ACTORS INVOLVED</div><div style="margin-top:3px">${actors}</div></div>
-${ev.url&&ev.url!=='#'?`<a href="${ev.url}" target="_blank" class="intel-src-link">↗ READ ORIGINAL SOURCE</a>`:''}
-<div style="margin-top:8px;font-family:var(--mono);font-size:.4rem;color:var(--muted);border-top:1px solid var(--b0);padding-top:5px">ANALYSIS: CLAUDE AI · ${new Date().toUTCString().slice(0,16)} UTC</div>`;
+  const ccColor=confColor(ev.confidence||70),ccLabel=confLabel(ev.confidence||70);
+  const unc=ev.uncertainty?'<div class="intel-unc">⚠ '+ev.uncertainty+'</div>':'';
+  let osintHTML='';
+  if(osintData.has_evidence&&osintData.evidence){
+    const evd=osintData.evidence,srcIcon=evd.source_icon||'🔍';
+    let mediaHTML='';
+    if(evd.type==='video'&&evd.embed_url){
+      const thumb=evd.thumbnail||'';
+      mediaHTML='<div class="osint-media-wrap"><div id="osint-vid-placeholder" style="width:100%;aspect-ratio:16/9;background:#000;position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center" onclick="loadOsintVideo(\\'' + evd.embed_url + '\\')">'+(thumb?'<img src="'+thumb+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.65" onerror="this.remove()"/>':'')+'<div class="osint-video-play-overlay"><div class="osint-play-btn">▶</div></div></div><div id="osint-vid-frame" style="display:none;width:100%;aspect-ratio:16/9"></div></div>';
+    } else {
+      const imgSrc=evd.image_url||evd.thumbnail||'',imgClass=evd.type==='satellite'?'osint-satellite-img':'osint-image';
+      mediaHTML='<div class="osint-media-wrap"><img class="'+imgClass+'" src="'+imgSrc+'" onclick="zoomImg(\\'' + imgSrc + '\\')" onerror="this.parentNode.innerHTML='<div style=padding:12px;font-family:var(--mono);font-size:.44rem;color:var(--muted)>Image unavailable</div>'" alt="Evidence"/></div>';
+    }
+    osintHTML='<div class="osint-section"><div class="osint-section-hdr"><span class="osint-hdr-title">🛰 EVENT EVIDENCE</span><span class="osint-source-badge">'+srcIcon+' '+( evd.source||'—')+'</span></div>'+mediaHTML+'<div class="osint-media-meta"><div class="osint-caption">'+(evd.caption||'—')+'</div><div class="osint-source-line"><span>'+srcIcon+'</span><span>'+(evd.source||'—')+'</span><span style="margin-left:auto;color:var(--cyan);font-family:var(--mono);font-size:.42rem">'+(evd.source_type||'').replace(/_/g,' ').toUpperCase()+'</span></div></div><div class="osint-ai-analysis"><div class="osint-ai-hdr"> IMAGERY ANALYSIS</div><div class="osint-ai-text">'+(evd.ai_analysis||evd.ai_brief||'Analysis pending.')+'</div></div><div class="osint-conf-notice">⚠ Evidence matched by region/type. Verify with primary sources.</div></div>';
+  } else {
+    const reason=osintData.confidence&&osintData.confidence<85?'Confidence '+osintData.confidence+'% below 85% threshold':'No indexed evidence for this type';
+    osintHTML='<div class="osint-section"><div class="osint-none">🛰 '+reason+'</div></div>';
+  }
+  body.innerHTML='<div class="intel-type">'+(detail.event_type||'UNKNOWN').toUpperCase()+'</div><div class="intel-loc">◈ '+precLoc+(ev.region&&ev.region!==precLoc?'<span style="color:var(--muted);margin-left:4px">· '+ev.region+'</span>':'')+'</div><div class="intel-det">Detected '+(ev.time_iso?timeSince(ev.time_iso):'—')+' · '+(detail.source||'—')+' · '+(ev.source_count??'—')+' src</div>'+unc+osintHTML+'<div class="intel-4g"><div class="intel-m"><div class="intel-m-l">CONFIDENCE</div><div class="intel-m-v" style="color:'+ccColor+'">'+(ev.confidence||'—')+'%</div></div><div class="intel-m"><div class="intel-m-l">ASSESSMENT</div><div style="font-family:var(--disp);font-size:.62rem;font-weight:700;color:'+ccColor+';padding-top:2px">'+ccLabel+'</div></div><div class="intel-m"><div class="intel-m-l">ESC. RISK</div><div class="esc-badge esc-'+esc+'">'+esc+'</div></div><div class="intel-m"><div class="intel-m-l">NUMBERS</div><div class="intel-m-v" style="color:var(--cyan);font-size:.62rem">'+(detail.numbers_detected||ev.numbers||'—')+'</div></div></div><div class="intel-stats-box"><div class="intel-stats-h">◈ LAST 24H — '+precLoc+'</div><div class="intel-stats-g"><div class="stat-item"><div class="stat-l">REGION EVENTS</div><div class="stat-v">'+(stats.region_events_24h??'—')+'</div></div><div class="stat-item"><div class="stat-l">SAME TYPE</div><div class="stat-v">'+(stats.same_type_24h??'—')+'</div></div><div class="stat-item"><div class="stat-l">MISSILE STRIKES</div><div class="stat-v">'+(stats.missiles_24h??'—')+'</div></div><div class="stat-item"><div class="stat-l">INTERCEPTIONS</div><div class="stat-v">'+(stats.interceptions_24h??'—')+'</div></div><div class="stat-item"><div class="stat-l">AIRSTRIKES</div><div class="stat-v">'+(stats.airstrikes_24h??'—')+'</div></div><div class="stat-item"><div class="stat-l">REGION GTI</div><div class="stat-v" style="color:'+gtiColor(stats.region_gti||0)+'">'+(stats.region_gti??'—')+'</div></div></div></div><div class="intel-sec"><div class="intel-sec-h">TACTICAL ASSESSMENT</div><div class="intel-text">'+(detail.tactical_assessment||'—')+'</div></div><div class="intel-sec"><div class="intel-sec-h">CONTEXT</div><div class="intel-text">'+(detail.context||'—')+'</div></div><div class="intel-sec"><div class="intel-sec-h">ACTORS</div><div style="margin-top:3px">'+actors+'</div></div>'+(ev.url&&ev.url!=='#'?'<a href="'+ev.url+'" target="_blank" class="intel-src-link">↗ ORIGINAL SOURCE</a>':'')+'<div style="margin-top:8px;font-family:var(--mono);font-size:.4rem;color:var(--muted);border-top:1px solid var(--b0);padding-top:5px">ANALYSIS: CLAUDE AI · '+new Date().toUTCString().slice(0,16)+' UTC</div>';
 }
 function closeIntel(){document.getElementById('intel-panel').classList.remove('open')}
 
@@ -2635,49 +2628,28 @@ async function loadAll(){
       fetch('/api/chokepoints-traffic').then(r=>r.json()).catch(()=>({chokepoints:{}})),
       fetch('/api/alignment-trends').then(r=>r.json()).catch(()=>({trends:{}})),
     ]);
-
     allEvents=er.events||[];
-    tradeData=trade;
-    travelData=travel.travel||{};
+    tradeData=trade; travelData=travel.travel||{};
     if(alignU.alignment)alignData['ukraine_war']=alignU.alignment;
     if(alignG.alignment)alignData['gaza_conflict']=alignG.alignment;
     if(alignTr.trends)alignTrends=alignTr.trends;
-
-    renderGTI(sr);
-    renderChart(tr.trend||[]);
-    renderMap(allEvents);
-    renderFeed(allEvents);
-    renderForecast(fc, act.events_detected_24h);
-    renderRegional(reg.regional||{});
-    renderStrategic(strat);
-    renderSupply(sup);
-    renderAlerts(al.alerts||[]);
-    renderActivity(act);
-    renderConflicts(conflicts.conflicts||[]);
-    renderConflictLayer(conflicts.conflicts||[]);
-    renderTradePanels(trade);
-    renderTradeLayer(trade.routes||[], chkTraffic.chokepoints||{});
-    renderTravelPanel(travelData);
-    renderTravelLayer(travelData);
-    renderTransparency(act,sr);
-    renderSnapshot(snap);
-    renderChokeTraffic(chkTraffic.chokepoints||{});
+    try{const oi=await fetch('/api/osint-index').then(r=>r.json());osintIndex={};(oi.evidence_available||[]).forEach(e=>{osintIndex[e.id]=e;});}catch(e){console.warn('[OSINT]',e);}
+    renderGTI(sr);renderChart(tr.trend||[]);renderMap(allEvents);renderFeed(allEvents);
+    renderForecast(fc,act.events_detected_24h);renderRegional(reg.regional||{});
+    renderStrategic(strat);renderSupply(sup);renderAlerts(al.alerts||[]);renderActivity(act);
+    renderConflicts(conflicts.conflicts||[]);renderConflictLayer(conflicts.conflicts||[]);
+    renderTradePanels(trade);renderTradeLayer(trade.routes||[],chkTraffic.chokepoints||{});
+    renderTravelPanel(travelData);renderTravelLayer(travelData);
+    renderTransparency(act,sr);renderSnapshot(snap);renderChokeTraffic(chkTraffic.chokepoints||{});
     renderAlignmentPanel('ukraine_war');
-
-    const ms=document.getElementById('map-src');
-    if(ms)ms.textContent=`${er.count||0} INCIDENTS · ${new Date().toUTCString().slice(17,25)} UTC`;
-
-    // Async: AI summary + daily briefing
+    const ms=document.getElementById('map-src');if(ms)ms.textContent=(er.count||0)+' INCIDENTS · '+new Date().toUTCString().slice(17,25)+' UTC';
     const se=document.getElementById('ai-sum');if(se){se.classList.add('typing');se.textContent='Analyzing…'}
     fetch('/api/summary').then(r=>r.json()).then(renderSummary).catch(()=>{const e=document.getElementById('ai-sum');if(e){e.classList.remove('typing');e.textContent='Summary unavailable.'}});
-
     const be=document.getElementById('daily-briefing');if(be){be.classList.add('typing');be.textContent='Generating daily briefing…'}
     fetch('/api/daily-briefing').then(r=>r.json()).then(renderBriefing).catch(()=>{const e=document.getElementById('daily-briefing');if(e){e.classList.remove('typing');e.textContent='Briefing unavailable.'}});
-
     await loadRepHistory();
-    setLayer(currentLayer, document.querySelector('.layer-btn.al, .layer-btn.al-conflict, .layer-btn.al-trade, .layer-btn.al-travel, .layer-btn.al-align'));
-
-  }catch(err){console.error('[LoadAll]',err)}
+    setLayer(currentLayer,document.querySelector('.layer-btn.al,.layer-btn.al-conflict,.layer-btn.al-trade,.layer-btn.al-travel,.layer-btn.al-align'));
+  }catch(err){console.error('[LoadAll]',err);}
 }
 
 // ════════════ BOOT ════════════
@@ -2692,284 +2664,41 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 
 // ════════════════════════════════════════════════════════════
-// OSINT EVIDENCE LAYER v4.2
+// OSINT LAYER UTILITIES v4.2
 // ════════════════════════════════════════════════════════════
-let osintIndex = {};   // eid -> evidence meta
+let osintIndex = {};
 let osintVisible = false;
 let hoverTimer = null;
-let activeHoverEl = null;
-
-async function loadOsintIndex() {
-  try {
-    const r = await fetch('/api/osint-index').then(x => x.json());
-    osintIndex = {};
-    (r.evidence_available || []).forEach(e => { osintIndex[e.id] = e; });
-    console.log(`[OSINT] ${Object.keys(osintIndex).length} events with visual evidence`);
-  } catch(e) { console.warn('[OSINT] Index load failed', e); }
-}
 
 function toggleOsintLayer(btn) {
   osintVisible = !osintVisible;
   btn.classList.toggle('active', osintVisible);
-  // Re-render map with/without evidence badges
   renderMap(allEvents);
 }
-
+function removeHoverPreview() {
+  const p = document.getElementById('ev-hover-preview'); if(p) p.remove();
+}
 function zoomImg(src) {
-  const ov = document.getElementById('img-zoom-overlay');
-  const img = document.getElementById('img-zoom-img');
-  if(ov && img) { img.src = src; ov.classList.add('show'); }
+  const ov=document.getElementById('img-zoom-overlay'),img=document.getElementById('img-zoom-img');
+  if(ov&&img){img.src=src;ov.classList.add('show');}
 }
 function closeZoom() {
-  const ov = document.getElementById('img-zoom-overlay');
-  if(ov) ov.classList.remove('show');
+  const ov=document.getElementById('img-zoom-overlay'); if(ov)ov.classList.remove('show');
 }
-
-// ── ENHANCED renderMap with OSINT badges ──
-function renderMap(events) {
-  if(!mLayer || !clusterLayer) return;
-  mLayer.clearLayers();
-  clusterLayer.clearLayers();
-
-  events.forEach(e => {
-    const age = e.age_minutes ?? 999;
-    const isHot = age < 10;
-    const conf = e.confidence || 70;
-    const cc = confClass(conf);
-    const color = age > 1440 ? 'faded' : cc;
-    const hotCls = isHot ? ' em-hot' : '';
-    const justTag = isHot ? `<div class="just-tag">JUST DETECTED</div>` : '';
-
-    // OSINT badge
-    const hasEvidence = osintVisible && osintIndex[e.id];
-    const evMeta = hasEvidence ? osintIndex[e.id] : null;
-    const evBadgeType = evMeta ? evMeta.type : '';
-    const evBadge = evMeta
-      ? `<div class="ev-badge ${evBadgeType}" title="Evidence: ${evBadgeType}">${evBadgeType === 'video' ? '▶' : evBadgeType === 'satellite' ? '🛰' : '📷'}</div>`
-      : '';
-    const wrapClass = evMeta ? 'ev-marker-wrap' : 'just-wrap';
-
-    const icon = L.divIcon({
-      className: '',
-      html: `<div class="${wrapClass}">${justTag}<div class="em ${color}${hotCls}"></div>${evBadge}</div>`,
-      iconSize: [16, 16],
-      iconAnchor: [5, 5]
-    });
-
-    const precLoc = e.precise_location || e.region;
-    const unc = e.uncertainty ? `<div style="color:#f5c518;font-size:.44rem;margin-top:3px;border-top:1px solid #0d3348;padding-top:3px">⚠ ${e.uncertainty}</div>` : '';
-    const srcLink = e.url && e.url !== '#' ? `<a href="${e.url}" target="_blank" style="color:#00e5ff;font-size:.5rem">↗ SOURCE</a>` : '';
-    const confBadgeColor = confColor(conf);
-    const osintHint = evMeta
-      ? `<div style="color:#9966ff;font-family:var(--mono);font-size:.44rem;margin-top:4px;border-top:1px solid rgba(153,102,255,.3);padding-top:3px">${evMeta.source_icon || '🔍'} VISUAL EVIDENCE AVAILABLE — click for intel panel</div>`
-      : '';
-
-    const popup = `
-<div style="font-family:'Orbitron',sans-serif;font-size:.55rem;letter-spacing:.12em;color:#ff6b1a;margin-bottom:3px">${e.type.toUpperCase()}${isHot ? '<span style="color:#ff2233;margin-left:5px;font-size:.38rem">● NOW</span>' : ''}</div>
-<div style="display:flex;justify-content:space-between;color:#4a7a99;font-size:.54rem;margin:2px 0"><span>LOCATION</span><span style="color:#00e5ff">${precLoc}</span></div>
-<div style="display:flex;justify-content:space-between;color:#4a7a99;font-size:.54rem;margin:2px 0"><span>CONFIDENCE</span><span style="color:${confBadgeColor}">${conf}% · ${confLabel(conf)}</span></div>
-<div style="display:flex;justify-content:space-between;color:#4a7a99;font-size:.54rem;margin:2px 0"><span>DETECTED</span><span style="color:#c8e8f8">${timeSince(e.time_iso)}</span></div>
-<div style="margin-top:5px;padding-top:4px;border-top:1px solid #0d3348;font-size:.56rem;line-height:1.35">${e.summary}</div>
-${unc}${osintHint}
-<div style="margin-top:5px;display:flex;justify-content:space-between;align-items:center">${srcLink}<div class="pop-analyze" onclick="openIntel('${e.id}')">◈ FULL ANALYSIS</div></div>`;
-
-    const marker = L.marker([e.lat, e.lon], { icon })
-      .bindPopup(popup, { maxWidth: 300 });
-
-    // Hover preview for evidence markers
-    if(evMeta) {
-      const thumb = evMeta.thumbnail;
-      marker.on('mouseover', function(ev) {
-        clearTimeout(hoverTimer);
-        hoverTimer = setTimeout(() => {
-          const el = this.getElement();
-          if(!el) return;
-          removeHoverPreview();
-          const preview = document.createElement('div');
-          preview.className = 'ev-hover-preview';
-          preview.id = 'ev-hover-preview';
-          if(evMeta.type === 'video' && thumb) {
-            preview.innerHTML = `<img class="ev-hover-thumb" src="${thumb}" alt="Evidence" onerror="this.parentNode.innerHTML='<div class=ev-hover-thumb-video>▶</div>'"/>
-<div class="ev-hover-meta"><div class="ev-hover-type">${evMeta.type.toUpperCase()} EVIDENCE</div><div class="ev-hover-src">${evMeta.source_icon || '🔍'} ${(evMeta.source||'').slice(0,20)}</div></div>`;
-          } else if(thumb) {
-            preview.innerHTML = `<img class="ev-hover-thumb" src="${thumb}" alt="Evidence"/>
-<div class="ev-hover-meta"><div class="ev-hover-type">${evMeta.type.toUpperCase()}</div><div class="ev-hover-src">${evMeta.source_icon || '🔍'} ${(evMeta.source||'').slice(0,20)}</div></div>`;
-          }
-          el.style.position = 'relative';
-          el.appendChild(preview);
-          activeHoverEl = el;
-        }, 250);
-      });
-      marker.on('mouseout', function() {
-        clearTimeout(hoverTimer);
-        setTimeout(removeHoverPreview, 400);
-      });
-    }
-
-    mLayer.addLayer(marker);
-    clusterLayer.addLayer(L.marker([e.lat, e.lon], { icon }).bindPopup(popup, { maxWidth: 300 }));
-  });
+function loadOsintVideo(embedUrl) {
+  const ph=document.getElementById('osint-vid-placeholder'),fw=document.getElementById('osint-vid-frame');
+  if(!ph||!fw)return;
+  ph.style.display='none'; fw.style.display='block';
+  fw.innerHTML='<iframe class="osint-video-frame" src="'+embedUrl+'&autoplay=1" allow="autoplay; encrypted-media" allowfullscreen></iframe>';
 }
-
-function removeHoverPreview() {
-  const p = document.getElementById('ev-hover-preview');
-  if(p) p.remove();
-}
-
-// ── ENHANCED openIntel with OSINT section ──
-async function openIntel(eid) {
-  const panel = document.getElementById('intel-panel');
-  const body = document.getElementById('intel-body');
-  panel.classList.add('open');
-  body.innerHTML = '<div class="intel-loading"><span class="intel-spinner">◈</span>Fetching Claude AI analysis…</div>';
-
-  const [detail, stats, osintData] = await Promise.all([
-    fetch(`/api/event-detail/${eid}`).then(r => r.json()).catch(() => ({})),
-    fetch(`/api/event-stats/${eid}`).then(r => r.json()).catch(() => ({})),
-    fetch(`/api/osint/${eid}`).then(r => r.json()).catch(() => ({ has_evidence: false })),
-  ]);
-
-  const esc = detail.escalation_risk || 'MODERATE';
-  const actors = (detail.related_actors || []).map(a => `<span class="actor-tag">${a}</span>`).join('') || '<span style="color:var(--muted);font-size:.42rem">—</span>';
-  const ev = allEvents.find(e => e.id === eid) || {};
-  const precLoc = ev.precise_location || detail.location || 'Unknown';
-  const cc = confClass(ev.confidence || 70);
-  const ccColor = confColor(ev.confidence || 70);
-  const ccLabel = confLabel(ev.confidence || 70);
-  const unc = ev.uncertainty ? `<div class="intel-unc">⚠ ${ev.uncertainty}</div>` : '';
-
-  // ── Build OSINT section ──
-  let osintHTML = '';
-  if(osintData.has_evidence && osintData.evidence) {
-    const evd = osintData.evidence;
-    const srcIcon = evd.source_icon || '🔍';
-
-    let mediaHTML = '';
-    if(evd.type === 'video' && evd.embed_url) {
-      mediaHTML = `
-<div class="osint-media-wrap" style="position:relative">
-  <div id="osint-video-placeholder" style="width:100%;aspect-ratio:16/9;background:#000;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative" onclick="loadOsintVideo('${evd.embed_url}','${evd.embed_id}')">
-    ${evd.thumbnail ? `<img src="${evd.thumbnail}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.7">` : ''}
-    <div class="osint-video-play-overlay">
-      <div class="osint-play-btn">▶</div>
-    </div>
-  </div>
-  <div id="osint-video-frame-wrap" style="display:none;width:100%;aspect-ratio:16/9"></div>
-</div>`;
-    } else if(evd.type === 'satellite' || evd.type === 'photo') {
-      const imgSrc = evd.image_url || evd.thumbnail || '';
-      mediaHTML = `<div class="osint-media-wrap"><img class="osint-${evd.type === 'satellite' ? 'satellite-img' : 'image'}" src="${imgSrc}" alt="Evidence" onclick="zoomImg('${imgSrc}')" onerror="this.style.display='none'"/></div>`;
-    }
-
-    osintHTML = `
-<div class="osint-section">
-  <div class="osint-section-hdr">
-    <span class="osint-hdr-title">🛰 EVENT EVIDENCE</span>
-    <span class="osint-source-badge">${srcIcon} <span>${evd.source || '—'}</span></span>
-  </div>
-  ${mediaHTML}
-  <div class="osint-media-meta">
-    <div class="osint-caption">${evd.caption || '—'}</div>
-    <div class="osint-source-line">
-      <span class="osint-source-icon">${srcIcon}</span>
-      <span>${evd.source || '—'}</span>
-      <span style="margin-left:auto;color:var(--cyan);font-family:var(--mono);font-size:.42rem">${(evd.source_type||'').replace('_',' ').toUpperCase()}</span>
-    </div>
-  </div>
-  <div class="osint-ai-analysis">
-    <div class="osint-ai-hdr"> IMAGERY ANALYSIS — CLAUDE AI</div>
-    <div class="osint-ai-text">${evd.ai_analysis || evd.ai_brief || 'Analysis pending.'}</div>
-  </div>
-  <div class="osint-conf-notice">⚠ Evidence matched by region/type. Verify with primary sources before operational use.</div>
-</div>`;
-  } else if(osintData.confidence && osintData.confidence < 85) {
-    osintHTML = `<div class="osint-section"><div class="osint-none">🛰 Visual evidence requires confidence ≥85%<br><span style="color:var(--dim)">Current: ${osintData.confidence}% — ${osintData.reason || ''}</span></div></div>`;
-  } else {
-    osintHTML = `<div class="osint-section"><div class="osint-none">🛰 No visual evidence indexed for this event type</div></div>`;
-  }
-
-  body.innerHTML = `
-<div class="intel-type">${(detail.event_type || 'UNKNOWN').toUpperCase()}</div>
-<div class="intel-loc">◈ ${precLoc}${ev.region && ev.region !== precLoc ? `<span style="color:var(--muted);margin-left:4px">· ${ev.region}</span>` : ''}</div>
-<div class="intel-det">Detected ${ev.time_iso ? timeSince(ev.time_iso) : '—'} · ${detail.source || '—'} · ${ev.source_count ?? '—'} source(s)</div>
-${unc}
-${osintHTML}
-<div class="intel-4g">
-  <div class="intel-m"><div class="intel-m-l">CONFIDENCE</div><div class="intel-m-v" style="color:${ccColor}">${ev.confidence || '—'}%</div></div>
-  <div class="intel-m"><div class="intel-m-l">ASSESSMENT</div><div style="font-family:var(--disp);font-size:.62rem;font-weight:700;color:${ccColor};padding-top:2px">${ccLabel}</div></div>
-  <div class="intel-m"><div class="intel-m-l">ESC. RISK</div><div class="esc-badge esc-${esc}">${esc}</div></div>
-  <div class="intel-m"><div class="intel-m-l">NUMBERS</div><div class="intel-m-v" style="color:var(--cyan);font-size:.62rem">${detail.numbers_detected || ev.numbers || '—'}</div></div>
-</div>
-<div class="intel-stats-box">
-  <div class="intel-stats-h">◈ LAST 24H — ${precLoc}</div>
-  <div class="intel-stats-g">
-    <div class="stat-item"><div class="stat-l">REGION EVENTS</div><div class="stat-v">${stats.region_events_24h ?? '—'}</div></div>
-    <div class="stat-item"><div class="stat-l">SAME TYPE</div><div class="stat-v">${stats.same_type_24h ?? '—'}</div></div>
-    <div class="stat-item"><div class="stat-l">MISSILE STRIKES</div><div class="stat-v">${stats.missiles_24h ?? '—'}</div></div>
-    <div class="stat-item"><div class="stat-l">INTERCEPTIONS</div><div class="stat-v">${stats.interceptions_24h ?? '—'}</div></div>
-    <div class="stat-item"><div class="stat-l">AIRSTRIKES</div><div class="stat-v">${stats.airstrikes_24h ?? '—'}</div></div>
-    <div class="stat-item"><div class="stat-l">REGION GTI</div><div class="stat-v" style="color:${gtiColor(stats.region_gti || 0)}">${stats.region_gti ?? '—'}</div></div>
-  </div>
-</div>
-<div class="intel-sec"><div class="intel-sec-h">TACTICAL ASSESSMENT</div><div class="intel-text">${detail.tactical_assessment || '—'}</div></div>
-<div class="intel-sec"><div class="intel-sec-h">CONTEXT</div><div class="intel-text">${detail.context || '—'}</div></div>
-<div class="intel-sec"><div class="intel-sec-h">ACTORS INVOLVED</div><div style="margin-top:3px">${actors}</div></div>
-${ev.url && ev.url !== '#' ? `<a href="${ev.url}" target="_blank" class="intel-src-link">↗ READ ORIGINAL SOURCE</a>` : ''}
-<div style="margin-top:8px;font-family:var(--mono);font-size:.4rem;color:var(--muted);border-top:1px solid var(--b0);padding-top:5px">ANALYSIS: CLAUDE AI · ${new Date().toUTCString().slice(0, 16)} UTC</div>`;
-}
-
-function loadOsintVideo(embedUrl, embedId) {
-  const placeholder = document.getElementById('osint-video-placeholder');
-  const frameWrap = document.getElementById('osint-video-frame-wrap');
-  if(!placeholder || !frameWrap) return;
-  placeholder.style.display = 'none';
-  frameWrap.style.display = 'block';
-  frameWrap.innerHTML = `<iframe class="osint-video-frame" src="${embedUrl}&autoplay=1" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
-}
-
-// Enhanced renderFeed with OSINT badge
-const _origRenderFeed = renderFeed;
-function renderFeed(events) {
-  const el = document.getElementById('feed-list'); if(!el) return;
-  if(!events.length){ el.innerHTML='<div style="padding:9px;font-family:var(--mono);font-size:.5rem;color:#ff2233">NO EVENTS</div>'; return; }
-  el.innerHTML = events.slice(0,18).map(e => {
-    const cc = confClass(e.confidence||70); const color = confColor(e.confidence||70); const label = confLabel(e.confidence||70);
-    const age = e.age_minutes??999;
-    const hasEvid = osintIndex[e.id];
-    const evidBadge = hasEvid ? `<span class="fi-osint-badge" title="Visual evidence available">${hasEvid.source_icon || '🛰'}</span>` : '';
-    return `<div class="fi" onclick="openIntel('${e.id}')">
-<div class="fi-ind ${cc}"></div>
-<div>
-  <div class="fi-type">${e.type.toUpperCase()}${age<10?'<span style="color:#ff2233;margin-left:3px;font-size:.36rem">● NOW</span>':''}${evidBadge}</div>
-  <div class="fi-loc">◈ ${e.precise_location||e.region}</div>
-  <div class="fi-reg">${e.region} · ${timeSince(e.time_iso)}</div>
-  <div class="fi-desc">${e.summary}</div>
-</div>
-<div>
-  <div class="fi-conf-badge" style="color:${color};border-color:${color}">${label}</div>
-  <div class="fi-src">${e.source}</div>
-</div>
-</div>`;
-  }).join('');
-}
-
-// Extend loadAll to also load OSINT index
-const _origLoadAll = loadAll;
-async function loadAll() {
-  await _origLoadAll();
-  await loadOsintIndex();
-  // Re-render map with evidence badges if OSINT layer is active
-  if(osintVisible) renderMap(allEvents);
-}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeZoom();closeIntel();}});
 
 </script>
 
-<!-- IMAGE ZOOM OVERLAY -->
 <div id="img-zoom-overlay" onclick="closeZoom()">
-  <span id="img-zoom-close" onclick="closeZoom()">✕</span>
-  <img id="img-zoom-img" src="" alt="OSINT Evidence"/>
+  <span id="img-zoom-close">✕</span>
+  <img id="img-zoom-img" src="" alt=""/>
 </div>
-
 </body>
 </html>
 """
