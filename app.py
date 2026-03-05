@@ -1,48 +1,55 @@
 """
-Global Tension Monitor – single-file deploy pre Render.com
-Vsetko (HTML, CSS, JS, backend) v jednom subore.
+Global Tension Monitor – RSS-only verzia (bez NewsAPI)
+Deploy na Render.com
 """
 import os, datetime, random, asyncio
-from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+import feedparser
 
-# ── KEYS (nastav ako Environment Variables na Render) ─────────────
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-NEWS_KEY      = os.environ.get("NEWS_API_KEY", "")
 
-# ── GTI DATA ──────────────────────────────────────────────────────
 EVENT_KEYWORDS = {
-    "missile strike":        ["missile strike","rocket attack","ballistic missile","missile launch","rocket fire","katyusha"],
-    "airstrike":             ["airstrike","air strike","bombing raid","bombed","aerial bombardment","air attack"],
-    "drone strike":          ["drone strike","uav attack","drone attack","shahed","fpv drone"],
-    "naval combat":          ["naval combat","warship attack","naval engagement","destroyer","frigate attack"],
-    "base attack":           ["base attacked","military base attack","barracks hit","base shelled","military installation"],
-    "military movement":     ["troops deployed","military convoy","forces massed","military buildup","military movement","troop buildup"],
-    "naval deployment":      ["carrier deployed","naval deployment","fleet dispatched","carrier group","warship deployed"],
-    "diplomatic escalation": ["sanctions imposed","ultimatum","ambassador recalled","nuclear threat","nuclear rhetoric"],
+    "missile strike":        ["missile strike","rocket attack","ballistic missile","missile launch","rocket fire","rocket barrage","katyusha","missile fired"],
+    "airstrike":             ["airstrike","air strike","bombing raid","bombed","aerial bombardment","air attack","warplane","jets struck"],
+    "drone strike":          ["drone strike","uav attack","drone attack","shahed","fpv drone","drone warfare"],
+    "naval combat":          ["naval combat","warship attack","naval engagement","destroyer","frigate attack","naval battle"],
+    "base attack":           ["base attacked","military base attack","barracks hit","base shelled","military installation attacked"],
+    "military movement":     ["troops deployed","military convoy","forces massed","military buildup","military movement","troop buildup","armored column","forces mobilized","military exercises"],
+    "naval deployment":      ["carrier deployed","naval deployment","fleet dispatched","carrier group","warship deployed","naval forces sent"],
+    "diplomatic escalation": ["sanctions imposed","ultimatum","ambassador recalled","nuclear threat","nuclear rhetoric","expel diplomat","diplomatic crisis","war warning"],
 }
 EVENT_WEIGHTS = {
     "missile strike":3,"airstrike":2,"drone strike":1,"naval combat":3,
     "base attack":4,"military movement":1,"naval deployment":2,"diplomatic escalation":1,
 }
 REGION_MAP = {
-    "Middle East":    {"lat":29.5, "lon":44.0, "kw":["iraq","iran","israel","gaza","lebanon","yemen","syria","saudi","baghdad","hamas","hezbollah","houthi","west bank","idf"]},
-    "Eastern Europe": {"lat":50.0, "lon":30.0, "kw":["ukraine","russia","belarus","donbas","kyiv","moscow","crimea","zaporizhzhia","kharkiv","zelensky","putin"]},
-    "East Asia":      {"lat":24.0, "lon":121.0,"kw":["china","taiwan","north korea","south korea","japan","pla","beijing","pyongyang","south china sea","taiwan strait"]},
-    "South Asia":     {"lat":30.5, "lon":68.0, "kw":["pakistan","india","afghanistan","kashmir","kabul","taliban"]},
-    "Horn of Africa": {"lat":10.0, "lon":42.0, "kw":["somalia","ethiopia","eritrea","sudan","red sea","bab el-mandeb","al-shabaab"]},
-    "West Africa":    {"lat":12.0, "lon":2.0,  "kw":["mali","niger","burkina faso","nigeria","sahel","boko haram","wagner"]},
-    "Mediterranean":  {"lat":36.0, "lon":14.0, "kw":["mediterranean","libya","tunisia","egypt","tripoli"]},
-    "Northern Europe":{"lat":60.0, "lon":20.0, "kw":["finland","sweden","baltic","estonia","latvia","lithuania","nato border","poland"]},
+    "Middle East":    {"lat":29.5, "lon":44.0, "kw":["iraq","iran","israel","gaza","lebanon","yemen","syria","saudi","baghdad","hamas","hezbollah","houthi","west bank","idf","irgc","rafah","tel aviv","beirut","jerusalem"]},
+    "Eastern Europe": {"lat":50.0, "lon":30.0, "kw":["ukraine","russia","belarus","donbas","kyiv","moscow","crimea","zaporizhzhia","kharkiv","kherson","mariupol","zelensky","putin","russian army","ukrainian army","sumy"]},
+    "East Asia":      {"lat":24.0, "lon":121.0,"kw":["china","taiwan","north korea","south korea","japan","pla","beijing","pyongyang","south china sea","taiwan strait","kim jong","seoul"]},
+    "South Asia":     {"lat":30.5, "lon":68.0, "kw":["pakistan","india","afghanistan","kashmir","kabul","taliban","islamabad","new delhi"]},
+    "Horn of Africa": {"lat":10.0, "lon":42.0, "kw":["somalia","ethiopia","eritrea","sudan","red sea","bab el-mandeb","al-shabaab","djibouti"]},
+    "West Africa":    {"lat":12.0, "lon":2.0,  "kw":["mali","niger","burkina faso","nigeria","sahel","boko haram","wagner","ecowas"]},
+    "Mediterranean":  {"lat":36.0, "lon":14.0, "kw":["mediterranean","libya","tunisia","egypt","tripoli","benghazi"]},
+    "Central Asia":   {"lat":41.0, "lon":63.0, "kw":["kazakhstan","uzbekistan","tajikistan","kyrgyzstan","armenia","azerbaijan","nagorno"]},
+    "Northern Europe":{"lat":60.0, "lon":20.0, "kw":["finland","sweden","baltic","estonia","latvia","lithuania","nato border","poland","kaliningrad"]},
+    "Latin America":  {"lat":-15.0,"lon":-55.0,"kw":["venezuela","colombia","cartel","narco","guerrilla","farc","ecuador"]},
 }
+RSS_FEEDS = [
+    ("BBC World",    "https://feeds.bbci.co.uk/news/world/rss.xml"),
+    ("Al Jazeera",   "https://www.aljazeera.com/xml/rss/all.xml"),
+    ("DW News",      "https://rss.dw.com/rdf/rss-en-world"),
+    ("Sky News",     "https://feeds.skynews.com/feeds/rss/world.xml"),
+    ("Reuters",      "https://feeds.reuters.com/reuters/worldNews"),
+    ("AP News",      "https://rsshub.app/apnews/topics/world-news"),
+]
 FALLBACK = [
     {"type":"missile strike","region":"Middle East","lat":33.3,"lon":44.4,"confidence":0.82,"source":"Reuters","summary":"Missile launches reported near Baghdad area targeting infrastructure","time":"2026-03-04T08:15:00Z","color":"red","url":"#"},
-    {"type":"airstrike","region":"Eastern Europe","lat":49.8,"lon":30.5,"confidence":0.91,"source":"BBC","summary":"Multiple airstrikes reported on infrastructure targets across the country","time":"2026-03-04T06:30:00Z","color":"red","url":"#"},
+    {"type":"airstrike","region":"Eastern Europe","lat":49.8,"lon":30.5,"confidence":0.91,"source":"BBC","summary":"Multiple airstrikes on infrastructure targets across the country","time":"2026-03-04T06:30:00Z","color":"red","url":"#"},
     {"type":"naval deployment","region":"Mediterranean","lat":35.5,"lon":18.2,"confidence":0.74,"source":"DW","summary":"Carrier strike group repositioned in Mediterranean amid rising tensions","time":"2026-03-04T04:00:00Z","color":"orange","url":"#"},
-    {"type":"drone strike","region":"South Asia","lat":31.5,"lon":65.0,"confidence":0.68,"source":"AP","summary":"Drone attack reported on military outpost near border region","time":"2026-03-04T03:45:00Z","color":"red","url":"#"},
-    {"type":"military movement","region":"East Asia","lat":24.5,"lon":121.5,"confidence":0.77,"source":"Reuters","summary":"Large-scale military exercises near strategic strait observed","time":"2026-03-04T02:00:00Z","color":"orange","url":"#"},
+    {"type":"drone strike","region":"South Asia","lat":31.5,"lon":65.0,"confidence":0.68,"source":"AP","summary":"Drone attack on military outpost near border region","time":"2026-03-04T03:45:00Z","color":"red","url":"#"},
+    {"type":"military movement","region":"East Asia","lat":24.5,"lon":121.5,"confidence":0.77,"source":"Reuters","summary":"Large-scale military exercises near strategic strait","time":"2026-03-04T02:00:00Z","color":"orange","url":"#"},
     {"type":"base attack","region":"Horn of Africa","lat":11.8,"lon":42.5,"confidence":0.88,"source":"Reuters","summary":"Military installation attacked in strategic coastal area","time":"2026-03-03T22:00:00Z","color":"red","url":"#"},
     {"type":"diplomatic escalation","region":"Northern Europe","lat":60.1,"lon":24.9,"confidence":0.61,"source":"DW","summary":"NATO member escalates military posture near border zone","time":"2026-03-03T20:30:00Z","color":"yellow","url":"#"},
     {"type":"airstrike","region":"West Africa","lat":14.0,"lon":-1.5,"confidence":0.70,"source":"AFP","summary":"Air strikes targeting militant positions in Sahel region","time":"2026-03-03T18:00:00Z","color":"red","url":"#"},
@@ -69,45 +76,53 @@ def jitter(v, r=2.5): return round(v + random.uniform(-r, r), 4)
 
 def calc_gti(events):
     mil = sum(EVENT_WEIGHTS.get(e["type"],1)*e["confidence"] for e in events)
-    st = sum([1 if e["type"]=="naval deployment" else 0 for e in events])
+    st  = sum(1 for e in events if e["type"]=="naval deployment")
+    st += sum(3 for e in events if "nuclear" in e["summary"].lower())
+    st += sum(2 for e in events if "nato" in e["summary"].lower() and e["type"] in {"base attack","missile strike"})
     eco = 2
     raw = mil + st + eco
     gti = round(min(10.0, raw/5.0), 2)
-    status = "STABLE" if gti<2 else "TENSION RISING" if gti<4 else "HIGH TENSION" if gti<6 else "CRISIS" if gti<8 else "GLOBAL CRISIS"
-    return {"gti":gti,"status":status,"military_score":round(mil,2),"strategic_score":st,"economic_score":eco,"event_count":len(events)}
+    s = "STABLE" if gti<2 else "TENSION RISING" if gti<4 else "HIGH TENSION" if gti<6 else "CRISIS" if gti<8 else "GLOBAL CRISIS"
+    return {"gti":gti,"status":s,"military_score":round(mil,2),"strategic_score":st,"economic_score":eco,"event_count":len(events)}
 
-async def fetch_news():
-    if not NEWS_KEY: return None
-    try:
-        import httpx
-        q = "missile strike OR airstrike OR drone strike OR troops deployed OR military attack OR naval deployment"
-        frm = (datetime.datetime.utcnow()-datetime.timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        async with httpx.AsyncClient(timeout=15) as c:
-            r = await c.get("https://newsapi.org/v2/everything", params={"q":q,"language":"en","sortBy":"publishedAt","pageSize":100,"from":frm,"apiKey":NEWS_KEY})
-            r.raise_for_status()
-            articles = r.json().get("articles",[])
-        events, seen = [], set()
-        for art in articles:
-            title = art.get("title") or ""
-            desc  = art.get("description") or ""
-            full  = title+" "+desc
-            etype = classify(full)
-            if not etype: continue
-            region, lat, lon = detect_region(full)
-            if not region: continue
-            key = title[:50]
-            if key in seen: continue
-            seen.add(key)
-            events.append({"type":etype,"region":region,"lat":jitter(lat),"lon":jitter(lon),
-                "confidence":round(0.5+random.random()*0.45,2),"source":(art.get("source") or {}).get("name","Unknown")[:25],
-                "summary":(desc or title)[:180],"time":art.get("publishedAt",datetime.datetime.utcnow().isoformat()),
-                "color":marker_color(etype),"url":art.get("url","#")})
-        return events if events else None
-    except Exception as e:
-        print(f"[NewsAPI] {e}")
-        return None
+def fetch_rss_events():
+    events, seen = [], set()
+    for source_name, url in RSS_FEEDS:
+        try:
+            feed = feedparser.parse(url)
+            for entry in feed.entries[:30]:
+                title   = entry.get("title","")
+                summary = entry.get("summary", entry.get("description", title))
+                # strip HTML tags
+                import re
+                summary = re.sub('<[^<]+?>', '', summary)
+                full    = title + " " + summary
+                etype   = classify(full)
+                if not etype: continue
+                region, lat, lon = detect_region(full)
+                if not region: continue
+                key = title[:60]
+                if key in seen: continue
+                seen.add(key)
+                link = entry.get("link","#")
+                events.append({
+                    "type":       etype,
+                    "region":     region,
+                    "lat":        jitter(lat),
+                    "lon":        jitter(lon),
+                    "confidence": round(0.55 + random.random()*0.4, 2),
+                    "source":     source_name,
+                    "summary":    (title)[:180],
+                    "time":       datetime.datetime.utcnow().isoformat()+"Z",
+                    "color":      marker_color(etype),
+                    "url":        link,
+                })
+        except Exception as e:
+            print(f"[RSS {source_name}] {e}")
+    print(f"[RSS] Spolu {len(events)} eventov z {len(RSS_FEEDS)} feedov")
+    return events if events else None
 
-# ── HTML PAGE (celý frontend embedded) ───────────────────────────
+# ── HTML ──────────────────────────────────────────────────────────
 HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -223,7 +238,7 @@ body::after{content:'';position:fixed;inset:0;background:radial-gradient(ellipse
     <div class="radar"></div>
     <div class="hdr-title">
       <h1>GLOBAL TENSION MONITOR</h1>
-      <div class="sub">LIVE GEOPOLITICAL INTELLIGENCE · NEWSAPI + CLAUDE AI</div>
+      <div class="sub">LIVE GEOPOLITICAL INTELLIGENCE · RSS + CLAUDE AI</div>
     </div>
   </div>
   <div class="hdr-right">
@@ -291,13 +306,11 @@ body::after{content:'';position:fixed;inset:0;background:radial-gradient(ellipse
 </div>
 </div>
 <script>
-const API='';
 function gtiColor(v){if(v<2)return'#00ff88';if(v<4)return'#f5c518';if(v<6)return'#ff6b1a';if(v<8)return'#ff2233';return'#8b0000'}
 function timeSince(iso){const m=(Date.now()-new Date(iso).getTime())/60000;if(m<60)return Math.round(m)+'m ago';if(m<1440)return Math.round(m/60)+'h ago';return Math.round(m/1440)+'d ago'}
 function animNum(el,to,dur,fmt){const s=performance.now();(function step(n){const t=Math.min((n-s)/dur,1),e=1-Math.pow(1-t,3);el.textContent=fmt(to*e);if(t<1)requestAnimationFrame(step)})(s)}
-function srcLabel(s){if(s==='newsapi')return'✓ NEWSAPI LIVE';if(s==='rss')return'⚡ RSS';return'⚠ MOCK DATA'}
-function srcColor(s){if(s==='newsapi')return'#00ff88';if(s==='rss')return'#f5c518';return'#ff6b1a'}
-
+function srcLabel(s){if(s==='rss')return'✓ RSS LIVE';if(s==='fallback')return'⚠ MOCK DATA';return'✓ LIVE'}
+function srcColor(s){return s==='fallback'?'#ff6b1a':'#00ff88'}
 function renderGTI(d){
   const c=gtiColor(d.gti);
   const n=document.getElementById('gnum');
@@ -316,7 +329,6 @@ function renderGTI(d){
   const sb=document.getElementById('src-badge');
   if(sb){sb.textContent=srcLabel(d.data_source);sb.style.color=srcColor(d.data_source)}
 }
-
 let tChart=null;
 function renderChart(trend){
   const ctx=document.getElementById('tchart');if(!ctx)return;
@@ -326,7 +338,6 @@ function renderChart(trend){
   if(tChart)tChart.destroy();
   tChart=new Chart(ctx,{type:'line',data:{labels,datasets:[{data:values,borderColor:color,borderWidth:2.5,pointRadius:3,pointBackgroundColor:values.map(v=>v?gtiColor(v):'transparent'),pointBorderColor:'transparent',tension:.38,fill:true,backgroundColor:(c)=>{const g=c.chart.ctx.createLinearGradient(0,0,0,170);g.addColorStop(0,`${color}44`);g.addColorStop(1,'transparent');return g}}]},options:{responsive:true,maintainAspectRatio:false,animation:{duration:1000},plugins:{legend:{display:false},tooltip:{backgroundColor:'#040d12',borderColor:'#1a6688',borderWidth:1,titleColor:'#00e5ff',bodyColor:'#c8e8f8',titleFont:{family:'Share Tech Mono',size:9},bodyFont:{family:'Share Tech Mono',size:9},callbacks:{label:c=>` GTI: ${c.raw?.toFixed(1)||'—'} / 10`}}},scales:{x:{grid:{color:'rgba(13,51,72,.35)',drawTicks:false},ticks:{color:'#4a7a99',font:{family:'Share Tech Mono',size:7},maxRotation:0,maxTicksLimit:9},border:{color:'#0d3348'}},y:{min:0,max:10,grid:{color:'rgba(13,51,72,.35)',drawTicks:false},ticks:{color:'#4a7a99',font:{family:'Share Tech Mono',size:7},stepSize:2,callback:v=>v},border:{color:'#0d3348'}}}}});
 }
-
 let leafMap=null,mLayer=null;
 function initMap(){
   if(leafMap)return;
@@ -338,7 +349,7 @@ function renderMap(events){
   if(!mLayer)return;mLayer.clearLayers();
   events.forEach(e=>{
     const icon=L.divIcon({className:'',html:`<div class="em ${e.color}"></div>`,iconSize:[12,12],iconAnchor:[6,6]});
-    const link=e.url&&e.url!=='#'?`<div style="margin-top:6px"><a href="${e.url}" target="_blank" style="color:#00e5ff;font-size:.6rem">↗ SOURCE</a></div>`:'';
+    const link=e.url&&e.url!=='#'?`<div style="margin-top:6px"><a href="${e.url}" target="_blank" style="color:#00e5ff;font-size:.6rem">↗ READ SOURCE</a></div>`:'';
     mLayer.addLayer(L.marker([e.lat,e.lon],{icon}).bindPopup(`<div class="pop-type">${e.type.toUpperCase()}</div><div class="pop-row"><span>REGION</span><span>${e.region}</span></div><div class="pop-row"><span>CONFIDENCE</span><span>${Math.round(e.confidence*100)}%</span></div><div class="pop-row"><span>SOURCE</span><span>${e.source}</span></div><div class="pop-row"><span>TIME</span><span>${timeSince(e.time)}</span></div><div class="pop-sum">${e.summary}</div>${link}`,{maxWidth:280}));
   });
 }
@@ -366,46 +377,41 @@ async function loadAll(){
       fetch('/api/events').then(r=>r.json()),
       fetch('/api/trend').then(r=>r.json()),
     ]);
-    renderGTI(sr);
-    renderChart(tr.trend||[]);
-    renderMap(er.events||[]);
-    renderFeed(er.events||[],er.source||'fallback');
+    renderGTI(sr);renderChart(tr.trend||[]);renderMap(er.events||[]);renderFeed(er.events||[],er.source||'fallback');
     const mt=document.getElementById('map-ts');
     if(mt)mt.textContent=`${er.count||0} INCIDENTS · ${new Date().toUTCString().slice(17,25)} UTC`;
     const sumEl=document.getElementById('sumtxt');
-    if(sumEl){sumEl.classList.add('typing');sumEl.textContent='Claude AI analyzing…'}
+    if(sumEl){sumEl.classList.add('typing');sumEl.textContent='Claude AI analyzing current threat landscape…'}
     try{const sumRes=await fetch('/api/summary').then(r=>r.json());renderSummary(sumRes)}
     catch(e){const el=document.getElementById('sumtxt');if(el){el.classList.remove('typing');el.textContent='Summary unavailable.'}}
   }catch(err){console.error(err)}
 }
 function startClock(){setInterval(()=>{const el=document.getElementById('utc');if(el)el.textContent=new Date().toUTCString().slice(0,25)+' UTC'},1000)}
-document.addEventListener('DOMContentLoaded',()=>{startClock();initMap();loadAll();setInterval(loadAll,5*60*1000)});
+document.addEventListener('DOMContentLoaded',()=>{startClock();initMap();loadAll();setInterval(loadAll,10*60*1000)});
 </script>
 </body>
 </html>"""
 
-# ── FASTAPI APP ───────────────────────────────────────────────────
+# ── FASTAPI ───────────────────────────────────────────────────────
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 @app.get("/", response_class=HTMLResponse)
 async def root(): return HTML
 
-async def pipeline():
-    events, source = None, "fallback"
-    events = await fetch_news()
-    if events: source = "newsapi"
-    else: events = FALLBACK; source = "fallback"
-    return events, source
+def pipeline():
+    events = fetch_rss_events()
+    if events: return events, "rss"
+    return FALLBACK, "fallback"
 
 @app.get("/api/events")
 async def api_events():
-    e, s = await pipeline()
+    e,s = pipeline()
     return {"events":e,"count":len(e),"source":s,"timestamp":datetime.datetime.utcnow().isoformat()+"Z"}
 
 @app.get("/api/status")
 async def api_status():
-    e, s = await pipeline()
+    e,s = pipeline()
     r = calc_gti(e)
     r["timestamp"]=datetime.datetime.utcnow().isoformat()+"Z"
     r["data_source"]=s
@@ -414,27 +420,30 @@ async def api_status():
 
 @app.get("/api/trend")
 async def api_trend():
-    e, _ = await pipeline()
+    e,_ = pipeline()
     live = calc_gti(e)["gti"]
     return {"trend":[
         {"date":"2026-02-03","value":2.8},{"date":"2026-02-07","value":3.4},
         {"date":"2026-02-11","value":3.8},{"date":"2026-02-15","value":4.1},
         {"date":"2026-02-19","value":5.1},{"date":"2026-02-23","value":5.9},
         {"date":"2026-02-27","value":6.5},{"date":"2026-03-01","value":6.8},
-        {"date":"2026-03-03","value":7.1},{"date":"2026-03-04","value":live},
+        {"date":"2026-03-03","value":7.1},{"date":"2026-03-05","value":live},
     ]}
 
 @app.get("/api/summary")
 async def api_summary():
-    e, s = await pipeline()
+    e,s = pipeline()
     g = calc_gti(e); gti=g["gti"]; status=g["status"]
     elist="\n".join(f"- [{x['type'].upper()}] {x['region']}: {x['summary'][:120]}" for x in e[:12])
     if not ANTHROPIC_KEY:
-        return {"summary":f"Set ANTHROPIC_API_KEY env var on Render. GTI: {gti:.1f}/10 ({status}), {len(e)} incidents tracked.","generated_by":"no-key","gti":gti,"event_count":len(e),"timestamp":datetime.datetime.utcnow().isoformat()+"Z"}
+        return {"summary":f"Set ANTHROPIC_API_KEY. GTI: {gti:.1f}/10 ({status}), {len(e)} incidents from {s}.","generated_by":"no-key","gti":gti,"event_count":len(e),"timestamp":datetime.datetime.utcnow().isoformat()+"Z"}
     try:
         import anthropic
-        msg=anthropic.Anthropic(api_key=ANTHROPIC_KEY).messages.create(model="claude-opus-4-6",max_tokens=350,messages=[{"role":"user","content":f"Classified geopolitical analyst. GTI:{gti:.1f}/10 — {status}. Incidents:\n{elist}\nWrite 3-4 sentence military-analytical situation report. End with 24h risk assessment."}])
+        msg=anthropic.Anthropic(api_key=ANTHROPIC_KEY).messages.create(
+            model="claude-opus-4-6",max_tokens=350,
+            messages=[{"role":"user","content":f"Classified geopolitical analyst. GTI:{gti:.1f}/10 — {status}. {len(e)} incidents from RSS feeds:\n{elist}\nWrite 3-4 sentence military-analytical situation report. End with 24h risk assessment."}])
         summary=msg.content[0].text; gen="claude-opus-4-6"
     except Exception as ex:
         summary=f"AI error: {str(ex)[:100]}"; gen="fallback"
     return {"summary":summary,"generated_by":gen,"gti":gti,"event_count":len(e),"timestamp":datetime.datetime.utcnow().isoformat()+"Z"}
+
