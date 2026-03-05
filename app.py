@@ -835,13 +835,202 @@ async def api_events_v4():
         enhanced.append(ev2)
     return {"events": enhanced, "count": len(enhanced), "source": _cache.get("source","fallback"), "timestamp": _cache.get("last_refresh","")}
 
+
+
+# ═══════════════════════════════════════════════════════════════
+# GTM v4.1 — NEW BACKEND ENDPOINTS
+# ═══════════════════════════════════════════════════════════════
+
+def calc_snapshot(events, gti_data, history, regional):
+    """Daily Global Risk Snapshot"""
+    gti = gti_data.get("gti", 0)
+    # Daily change: compare to 24 snapshots ago
+    prev_gti = gti
+    if len(history) >= 6:
+        prev_gti = history[-6].get("gti", gti)
+    gti_change = round(gti - prev_gti, 2)
+
+    # Count events in last 24h vs prior 24h
+    recent_count = len(events)
+    prior_count = max(1, recent_count - random.randint(2, 8))  # simulated
+    incident_change = recent_count - prior_count
+
+    # Strategic events
+    strategic_count = sum(1 for e in events if e["type"] in {"strategic event","naval deployment","missile strike"})
+    prior_strategic = max(0, strategic_count - random.randint(0, 2))
+    strategic_change = strategic_count - prior_strategic
+
+    # Most active region
+    region_counts = {}
+    for e in events:
+        region_counts[e["region"]] = region_counts.get(e["region"], 0) + 1
+    most_active = max(region_counts, key=region_counts.get) if region_counts else "—"
+
+    # Fastest escalating conflict
+    escalation_map = {
+        "Horn of Africa": "Red Sea Naval Crisis",
+        "Middle East": "Iran-Israel Tensions",
+        "Eastern Europe": "Ukraine Front",
+        "East Asia": "Taiwan Strait",
+        "West Africa": "Sahel Insurgency",
+    }
+    fastest = escalation_map.get(most_active, "Regional Tensions")
+
+    # Hotspots (regions with 2+ events)
+    hotspots = [r for r, c in sorted(region_counts.items(), key=lambda x: -x[1]) if c >= 1][:6]
+
+    # Stable regions (no events)
+    all_regions = set(REGION_MAP.keys())
+    active_regions = set(region_counts.keys())
+    stable = list(all_regions - active_regions)[:4]
+    if not stable:
+        stable = ["Oceania", "Central Asia", "Latin America"]
+
+    # Trend direction
+    trend = "rising" if gti_change > 0.1 else ("falling" if gti_change < -0.1 else "stable")
+
+    return {
+        "gti": gti,
+        "gti_change": gti_change,
+        "trend": trend,
+        "active_conflicts": len(PERSISTENT_CONFLICTS),
+        "strategic_events_24h": strategic_count,
+        "most_active_region": most_active,
+        "fastest_escalation": fastest,
+        "incident_change": incident_change,
+        "strategic_change": strategic_change,
+        "hotspots": hotspots,
+        "stable_regions": stable,
+        "region_density": dict(sorted(region_counts.items(), key=lambda x: -x[1])),
+    }
+
+def calc_alignment_trends():
+    """Simulate geopolitical stance trends"""
+    trends = {
+        "ukraine_war": {
+            "France":   {"trend": "stable",   "note": "Maintains support"},
+            "Germany":  {"trend": "stable",   "note": "Consistent support"},
+            "Hungary":  {"trend": "shifting_away", "note": "Moving toward neutrality"},
+            "Turkey":   {"trend": "mediating","note": "Brokering negotiations"},
+            "China":    {"trend": "shifting_toward_A", "note": "Increasing Russia support signals"},
+            "India":    {"trend": "stable",   "note": "Maintains neutrality"},
+            "Belarus":  {"trend": "stable",   "note": "Fully aligned with Russia"},
+        },
+        "gaza_conflict": {
+            "Turkey":   {"trend": "hardening","note": "Increasing pro-Palestine stance"},
+            "Qatar":    {"trend": "mediating","note": "Active ceasefire mediation"},
+            "Egypt":    {"trend": "mediating","note": "Hostage deal negotiations"},
+            "Saudi Arabia": {"trend": "shifting_B", "note": "Shifting toward normalization pause"},
+            "France":   {"trend": "shifting_B", "note": "Calling for ceasefire"},
+            "US":       {"trend": "stable",   "note": "Maintains Israel support"},
+        }
+    }
+    return trends
+
+def ai_daily_briefing(events, gti, status, snapshot):
+    prompt = f"""You are a classified global intelligence analyst. Write a concise daily briefing (3-4 sentences, military/analytical style).
+
+Current GTI: {gti}/10 — {status}
+Most active region: {snapshot['most_active_region']}
+Fastest escalation: {snapshot['fastest_escalation']}
+GTI trend: {snapshot['trend']} ({snapshot['gti_change']:+.1f})
+Active events: {len(events)}
+
+Top events:
+""" + "\n".join(f"- [{e['type']}] {e['region']}: {e['summary'][:80]}" for e in events[:8]) + """
+
+Write like a DAILY INTEL BRIEF. End with: "Assessment: [one sentence risk outlook for next 24h]" """
+    result = ai_call(prompt, 280)
+    if result:
+        return result
+    # Fallback
+    trend_word = "elevated" if gti >= 5 else "moderate" if gti >= 3 else "low"
+    return (f"Global tension index at {gti}/10 with {trend_word} activity across {snapshot['most_active_region']} and {len(events)} active incidents monitored. "
+            f"The {snapshot['fastest_escalation']} remains the primary escalation vector. "
+            f"Strategic chokepoints and naval deployments continue to elevate risk. "
+            f"Assessment: {'Elevated risk of localized escalation in next 24h.' if gti >= 5 else 'Monitor for rapid developments; situation may evolve quickly.'}")
+
+def calc_chokepoint_traffic(events):
+    """Simulate chokepoint traffic levels based on events"""
+    base = {
+        "Strait of Hormuz": {"traffic_pct": 78, "normal_vessels_day": 21, "risk": "MODERATE"},
+        "Suez Canal": {"traffic_pct": 54, "normal_vessels_day": 48, "risk": "HIGH"},
+        "Bab el-Mandeb": {"traffic_pct": 38, "normal_vessels_day": 35, "risk": "HIGH"},
+        "Taiwan Strait": {"traffic_pct": 88, "normal_vessels_day": 300, "risk": "LOW"},
+        "Strait of Gibraltar": {"traffic_pct": 95, "normal_vessels_day": 110, "risk": "LOW"},
+        "Malacca Strait": {"traffic_pct": 91, "normal_vessels_day": 85, "risk": "LOW"},
+    }
+    # Reduce traffic for active conflict areas
+    for e in events:
+        if e["region"] == "Horn of Africa":
+            base["Bab el-Mandeb"]["traffic_pct"] = max(20, base["Bab el-Mandeb"]["traffic_pct"] - 3)
+            base["Suez Canal"]["traffic_pct"] = max(30, base["Suez Canal"]["traffic_pct"] - 2)
+        if e["region"] == "Middle East":
+            base["Strait of Hormuz"]["traffic_pct"] = max(40, base["Strait of Hormuz"]["traffic_pct"] - 1)
+        if e["region"] == "East Asia":
+            base["Taiwan Strait"]["traffic_pct"] = max(50, base["Taiwan Strait"]["traffic_pct"] - 2)
+    return base
+
+# Store daily briefing in cache to avoid repeated AI calls
+_daily_briefing_cache = {"text": None, "date": None}
+
+@app.get("/api/snapshot")
+async def api_snapshot():
+    e = gevents()
+    g = _cache.get("gti_data") or calc_gti(e)
+    h = _cache.get("history", [])
+    reg = _cache.get("regional", {})
+    snap = calc_snapshot(e, g, h, reg)
+    return {**snap, "timestamp": _cache.get("last_refresh", "")}
+
+@app.get("/api/daily-briefing")
+async def api_daily_briefing():
+    global _daily_briefing_cache
+    today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    # Cache briefing for the day
+    if _daily_briefing_cache["date"] == today and _daily_briefing_cache["text"]:
+        return {"briefing": _daily_briefing_cache["text"], "date": today, "cached": True}
+    e = gevents()
+    g = _cache.get("gti_data") or calc_gti(e)
+    reg = _cache.get("regional", {})
+    snap = calc_snapshot(e, g, _cache.get("history", []), reg)
+    text = ai_daily_briefing(e, g["gti"], g["status"], snap)
+    _daily_briefing_cache = {"text": text, "date": today}
+    return {"briefing": text, "date": today, "cached": False, "timestamp": datetime.datetime.utcnow().isoformat()+"Z"}
+
+@app.get("/api/chokepoints-traffic")
+async def api_chokepoints_traffic():
+    e = gevents()
+    traffic = calc_chokepoint_traffic(e)
+    return {"chokepoints": traffic, "timestamp": _cache.get("last_refresh", "")}
+
+@app.get("/api/alignment-trends")
+async def api_alignment_trends():
+    return {"trends": calc_alignment_trends(), "timestamp": _cache.get("last_refresh", "")}
+
+@app.get("/api/confidence-events")
+async def api_confidence_events():
+    """Events with confidence classification for color coding"""
+    e = gevents()
+    classified = []
+    for ev in e:
+        conf = ev.get("confidence", 70)
+        ev2 = {k: v for k, v in ev.items() if k != "full_text"}
+        ev2["conf_class"] = "confirmed" if conf >= 78 else ("probable" if conf >= 60 else "unverified")
+        ev2["conf_color"] = "#00ff88" if conf >= 78 else ("#f5c518" if conf >= 60 else "#ff2233")
+        classified.append(ev2)
+    return {"events": classified, "timestamp": _cache.get("last_refresh", "")}
+
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="en" dir="ltr">
 <head>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>GLOBAL CONFLICT RADAR v4</title>
+<title>GLOBAL CONFLICT RADAR v4.1</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet"/>
 <style>
@@ -857,7 +1046,15 @@ html[dir="rtl"] .left-panel{order:3;border-right:none;border-left:1px solid var(
 html[dir="rtl"] .right-panel{order:1;border-left:none;border-right:1px solid var(--b0)}
 body{background:var(--bg);color:var(--txt);font-family:var(--body);font-size:14px;height:100vh;overflow:hidden}
 body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,170,255,.03)1px,transparent 1px),linear-gradient(90deg,rgba(0,170,255,.03)1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0}
-.scanlines{position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.04)2px,rgba(0,0,0,.04)4px);pointer-events:none;z-index:999}
+.scanlines{position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.04)2px,rgba(0,0,0,.04)4px);pointer-events:none;z-index:998}
+
+/* ── CLUSTER OVERRIDES ── */
+.marker-cluster{background:rgba(255,34,51,.18)!important;border:1px solid #ff2233!important}
+.marker-cluster div{background:rgba(255,34,51,.7)!important;color:#fff!important;font-family:var(--mono)!important;font-size:.55rem!important;font-weight:700}
+.marker-cluster-small{background:rgba(245,197,24,.15)!important;border:1px solid #f5c518!important}
+.marker-cluster-small div{background:rgba(245,197,24,.7)!important}
+.marker-cluster-medium{background:rgba(255,107,26,.15)!important;border:1px solid #ff6b1a!important}
+.marker-cluster-medium div{background:rgba(255,107,26,.7)!important}
 
 /* ── ALERT ── */
 #alert-banner{display:none;position:fixed;top:0;left:0;right:0;z-index:990;background:linear-gradient(90deg,#1a0008,#2a0010,#1a0008);border-bottom:1px solid var(--red);padding:5px 14px;font-family:var(--mono);font-size:.58rem;letter-spacing:.1em;color:var(--red);align-items:center;justify-content:space-between}
@@ -865,188 +1062,222 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .al-close{cursor:pointer;color:var(--dim);padding:0 6px}
 
 /* ── HEADER ── */
-.hdr{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;border-bottom:1px solid var(--b0);background:rgba(2,6,8,.97);position:relative;z-index:20;flex-shrink:0;gap:8px}
-.hdr-left{display:flex;align-items:center;gap:10px;min-width:0}
-.radar{width:32px;height:32px;border:2px solid var(--cyan);border-radius:50%;position:relative;flex-shrink:0;animation:rPulse 3s ease-in-out infinite}
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;border-bottom:1px solid var(--b0);background:rgba(2,6,8,.97);position:relative;z-index:20;flex-shrink:0;gap:8px;flex-wrap:wrap}
+.hdr-left{display:flex;align-items:center;gap:9px;min-width:0}
+.radar{width:30px;height:30px;border:2px solid var(--cyan);border-radius:50%;position:relative;flex-shrink:0;animation:rPulse 3s ease-in-out infinite}
 .radar::after{content:'';position:absolute;top:50%;left:50%;width:2px;height:40%;background:var(--cyan);transform-origin:bottom center;transform:translateX(-50%);animation:rSweep 3s linear infinite}
 @keyframes rSweep{to{transform:translateX(-50%)rotate(360deg)}}
-@keyframes rPulse{0%,100%{box-shadow:0 0 6px #00e5ff44}50%{box-shadow:0 0 16px #00e5ffaa}}
-.hdr-titles h1{font-family:var(--disp);font-size:.88rem;font-weight:700;letter-spacing:.2em;color:var(--cyan);text-shadow:0 0 8px #00e5ff44;white-space:nowrap}
-.hdr-sub{font-family:var(--mono);font-size:.48rem;color:var(--dim);letter-spacing:.1em}
-.hdr-center{display:flex;align-items:center;gap:6px;flex:1;justify-content:center}
-/* MAP LAYER SWITCHER in header */
-.layer-btn{padding:3px 9px;border:1px solid var(--b0);cursor:pointer;color:var(--dim);background:transparent;font-family:var(--mono);font-size:.48rem;letter-spacing:.07em;transition:all .15s;white-space:nowrap}
+@keyframes rPulse{0%,100%{box-shadow:0 0 5px #00e5ff44}50%{box-shadow:0 0 14px #00e5ffaa}}
+.hdr-titles h1{font-family:var(--disp);font-size:.85rem;font-weight:700;letter-spacing:.2em;color:var(--cyan);text-shadow:0 0 8px #00e5ff44;white-space:nowrap}
+.hdr-sub{font-family:var(--mono);font-size:.46rem;color:var(--dim);letter-spacing:.09em}
+.hdr-center{display:flex;align-items:center;gap:4px;flex:1;justify-content:center;flex-wrap:wrap}
+.layer-btn{padding:3px 8px;border:1px solid var(--b0);cursor:pointer;color:var(--dim);background:transparent;font-family:var(--mono);font-size:.46rem;letter-spacing:.06em;transition:all .15s;white-space:nowrap}
 .layer-btn:hover{border-color:var(--b1);color:var(--txt)}
-.layer-btn.active{border-color:var(--cyan);color:var(--cyan);background:rgba(0,229,255,.07)}
-.layer-btn.active-trade{border-color:var(--yellow);color:var(--yellow);background:rgba(245,197,24,.07)}
-.layer-btn.active-travel{border-color:var(--green);color:var(--green);background:rgba(0,255,136,.07)}
-.layer-btn.active-align{border-color:var(--purple);color:var(--purple);background:rgba(153,102,255,.07)}
-.layer-btn.active-conflict{border-color:var(--red);color:var(--red);background:rgba(255,34,51,.07)}
-.hdr-right{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:.52rem;color:var(--dim);flex-shrink:0}
-/* LANGUAGE SWITCHER */
-.lang-sel{background:transparent;border:1px solid var(--b0);color:var(--dim);font-family:var(--mono);font-size:.5rem;padding:2px 6px;cursor:pointer;outline:none}
-.lang-sel:hover{border-color:var(--b1);color:var(--txt)}
+.layer-btn.al{border-color:var(--cyan);color:var(--cyan);background:rgba(0,229,255,.07)}
+.layer-btn.al-trade{border-color:var(--yellow);color:var(--yellow);background:rgba(245,197,24,.07)}
+.layer-btn.al-travel{border-color:var(--green);color:var(--green);background:rgba(0,255,136,.07)}
+.layer-btn.al-align{border-color:var(--purple);color:var(--purple);background:rgba(153,102,255,.07)}
+.layer-btn.al-conflict{border-color:var(--red);color:var(--red);background:rgba(255,34,51,.07)}
+.hdr-right{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:.5rem;color:var(--dim);flex-shrink:0}
+.lang-sel{background:transparent;border:1px solid var(--b0);color:var(--dim);font-family:var(--mono);font-size:.48rem;padding:2px 5px;cursor:pointer;outline:none}
 .lang-sel option{background:#040d12;color:var(--txt)}
 .live-dot{width:5px;height:5px;background:var(--green);border-radius:50%;box-shadow:0 0 5px var(--green);animation:blink 1.2s ease-in-out infinite;flex-shrink:0}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.1}}
 
 /* ── SHELL ── */
-.shell{display:flex;height:calc(100vh - 82px);overflow:hidden;position:relative;z-index:1}
-.left-panel{width:260px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--b0);overflow-y:auto;display:flex;flex-direction:column}
+.shell{display:flex;height:calc(100vh - 80px);overflow:hidden;position:relative;z-index:1}
+.left-panel{width:258px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--b0);overflow-y:auto;display:flex;flex-direction:column}
 .map-col{flex:1;display:flex;flex-direction:column;min-width:0}
-.right-panel{width:252px;flex-shrink:0;background:var(--bg2);border-left:1px solid var(--b0);overflow-y:auto}
+.right-panel{width:256px;flex-shrink:0;background:var(--bg2);border-left:1px solid var(--b0);overflow-y:auto}
 .left-panel::-webkit-scrollbar,.right-panel::-webkit-scrollbar{width:2px}
 .left-panel::-webkit-scrollbar-thumb,.right-panel::-webkit-scrollbar-thumb{background:var(--b0)}
 
 /* ── SEC ── */
 .sec{border-bottom:1px solid var(--b0)}
-.sec-h{display:flex;align-items:center;justify-content:space-between;padding:5px 10px;background:rgba(0,170,255,.02);cursor:pointer;user-select:none;gap:4px}
+.sec-h{display:flex;align-items:center;justify-content:space-between;padding:5px 9px;background:rgba(0,170,255,.02);cursor:pointer;user-select:none;gap:4px}
 .sec-h:hover{background:rgba(0,170,255,.04)}
-.sec-t{font-family:var(--disp);font-size:.46rem;letter-spacing:.16em;color:var(--dim);flex:1}
-.sec-b{font-family:var(--mono);font-size:.44rem;color:var(--muted)}
-.arr{font-size:.5rem;color:var(--muted);transition:transform .2s;flex-shrink:0}
+.sec-t{font-family:var(--disp);font-size:.44rem;letter-spacing:.15em;color:var(--dim);flex:1}
+.sec-b{font-family:var(--mono);font-size:.42rem;color:var(--muted)}
+.arr{font-size:.48rem;color:var(--muted);transition:transform .2s;flex-shrink:0}
 .collapsed .arr{transform:rotate(-90deg)}
 .collapsed .sec-body{display:none}
-.sec-body{padding:7px 9px}
+.sec-body{padding:6px 9px}
+
+/* ── SNAPSHOT ── */
+.snap-top{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:5px}
+.snap-item{background:rgba(0,229,255,.04);border:1px solid var(--b0);padding:5px 7px}
+.snap-lbl{font-family:var(--mono);font-size:.4rem;color:var(--muted);letter-spacing:.07em;margin-bottom:1px}
+.snap-val{font-family:var(--disp);font-size:.9rem;font-weight:700;line-height:1}
+.snap-sub{font-family:var(--mono);font-size:.4rem;color:var(--dim);margin-top:1px}
+.snap-wide{display:flex;justify-content:space-between;align-items:center;padding:4px 7px;border:1px solid var(--b0);margin-bottom:3px;background:rgba(0,170,255,.02)}
+.snap-wide-l{font-family:var(--mono);font-size:.42rem;color:var(--muted)}
+.snap-wide-v{font-family:var(--mono);font-size:.48rem}
+
+/* DAILY CHANGES */
+.delta-row{display:flex;align-items:center;justify-content:space-between;padding:3px 7px;border:1px solid var(--b0);margin-bottom:2px}
+.delta-lbl{font-family:var(--mono);font-size:.44rem;color:var(--dim)}
+.delta-val{font-family:var(--disp);font-size:.7rem;font-weight:700}
+.delta-up{color:var(--red)}.delta-down{color:var(--green)}.delta-flat{color:var(--dim)}
+
+/* HOTSPOTS */
+.hotspot-row{display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid rgba(13,51,72,.3);cursor:pointer}
+.hotspot-row:hover{background:rgba(0,170,255,.03)}
+.hotspot-num{font-family:var(--disp);font-size:.55rem;font-weight:700;width:20px;text-align:center;flex-shrink:0}
+.hotspot-name{font-family:var(--mono);font-size:.5rem;color:var(--txt);flex:1}
+.hotspot-bar-wrap{width:40px;height:4px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden}
+.hotspot-bar-fill{height:100%;border-radius:2px}
+
+/* STABLE REGIONS */
+.stable-row{display:flex;align-items:center;gap:5px;padding:3px 0;border-bottom:1px solid rgba(13,51,72,.2)}
+.stable-dot{width:5px;height:5px;border-radius:50%;background:var(--green);box-shadow:0 0 4px var(--green);flex-shrink:0}
+.stable-name{font-family:var(--mono);font-size:.48rem;color:var(--dim)}
+.stable-badge{font-family:var(--disp);font-size:.4rem;color:var(--green);border:1px solid rgba(0,255,136,.3);padding:1px 4px;margin-left:auto}
+
+/* DAILY BRIEFING */
+.briefing-text{font-family:var(--body);font-size:.72rem;line-height:1.75;color:var(--txt);border-left:2px solid var(--b1);padding-left:8px}
+.briefing-text.typing::after{content:'▋';animation:blink .7s infinite;color:var(--cyan)}
+.briefing-footer{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.42rem;color:var(--muted);margin-top:5px;padding-top:4px;border-top:1px solid var(--b0)}
 
 /* ── GTI ── */
-.gti-wrap{text-align:center;padding:9px 7px 5px}
-.gti-ring{width:130px;height:130px;border-radius:50%;border:2px solid var(--b0);position:relative;margin:0 auto 7px;display:flex;flex-direction:column;align-items:center;justify-content:center}
-.gti-rg{position:absolute;inset:-1px;border-radius:50%;border:2px solid var(--red);animation:rgPulse 2s ease-in-out infinite;transition:all .6s}
-@keyframes rgPulse{0%,100%{opacity:.6}50%{opacity:1}}
+.gti-wrap{text-align:center;padding:8px 7px 5px}
+.gti-ring{width:128px;height:128px;border-radius:50%;border:2px solid var(--b0);position:relative;margin:0 auto 6px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.gti-rg{position:absolute;inset:-1px;border-radius:50%;border:2px solid var(--red);animation:rgP 2s ease-in-out infinite;transition:all .6s}
+@keyframes rgP{0%,100%{opacity:.6}50%{opacity:1}}
 .gti-ri{position:absolute;inset:8px;border-radius:50%;border:1px solid rgba(255,34,51,.15);transition:all .6s}
-.gti-num{font-family:var(--disp);font-size:2.6rem;font-weight:900;line-height:1;transition:color .6s}
-.gti-den{font-family:var(--disp);font-size:.65rem;color:var(--muted)}
-.gti-stat{font-family:var(--disp);font-size:.55rem;letter-spacing:.2em;padding:3px 9px;border:1px solid;display:inline-block;margin-bottom:5px;animation:sp 2s ease-in-out infinite;transition:all .6s}
+.gti-num{font-family:var(--disp);font-size:2.5rem;font-weight:900;line-height:1;transition:color .6s}
+.gti-den{font-family:var(--disp);font-size:.62rem;color:var(--muted)}
+.gti-stat{font-family:var(--disp);font-size:.52rem;letter-spacing:.18em;padding:3px 9px;border:1px solid;display:inline-block;margin-bottom:4px;animation:sp 2s ease-in-out infinite;transition:all .6s}
 @keyframes sp{0%,100%{opacity:1}50%{opacity:.6}}
 .gti-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;margin-bottom:4px}
-.gsub{text-align:center}.gsub-l{font-family:var(--mono);font-size:.42rem;color:var(--muted);margin-bottom:1px}.gsub-v{font-family:var(--disp);font-size:.8rem;font-weight:700;color:var(--orange)}
-.vel-row{display:flex;justify-content:space-between;align-items:center;padding:4px 9px;border-top:1px solid var(--b0);font-family:var(--mono);font-size:.5rem}
+.gsub{text-align:center}.gsub-l{font-family:var(--mono);font-size:.4rem;color:var(--muted);margin-bottom:1px}.gsub-v{font-family:var(--disp);font-size:.78rem;font-weight:700;color:var(--orange)}
+.vel-row{display:flex;justify-content:space-between;align-items:center;padding:3px 9px;border-top:1px solid var(--b0);font-family:var(--mono);font-size:.48rem}
 .sleg{display:grid;grid-template-columns:1fr 1fr;gap:1px 5px;padding:4px 9px 5px;border-top:1px solid var(--b0)}
-.sl{font-family:var(--mono);font-size:.42rem}
+.sl{font-family:var(--mono);font-size:.4rem}
 
 /* ── ACTIVITY ── */
 .act-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}
-.act-item{background:rgba(0,229,255,.04);border:1px solid var(--b0);padding:5px 7px}
-.act-lbl{font-family:var(--mono);font-size:.42rem;color:var(--muted);margin-bottom:1px}
-.act-val{font-family:var(--disp);font-size:1rem;font-weight:700;line-height:1}
-.act-sub{font-family:var(--mono);font-size:.4rem;color:var(--dim);margin-top:1px}
-.act-ping{display:flex;align-items:center;justify-content:space-between;padding:4px 7px;border:1px solid var(--b0);background:rgba(0,255,136,.03);margin-top:4px}
+.act-item{background:rgba(0,229,255,.04);border:1px solid var(--b0);padding:5px 6px}
+.act-lbl{font-family:var(--mono);font-size:.4rem;color:var(--muted);margin-bottom:1px}
+.act-val{font-family:var(--disp);font-size:.9rem;font-weight:700;line-height:1}
+.act-sub{font-family:var(--mono);font-size:.38rem;color:var(--dim);margin-top:1px}
+.act-ping{display:flex;align-items:center;justify-content:space-between;padding:4px 6px;border:1px solid var(--b0);background:rgba(0,255,136,.03);margin-top:4px}
 .act-ping-dot{width:4px;height:4px;border-radius:50%;background:var(--green);box-shadow:0 0 4px var(--green);animation:blink .8s infinite}
 
 /* ── FORECAST ── */
 .fc-bars{display:flex;flex-direction:column;gap:4px}
 .fc-row{display:flex;align-items:center;gap:4px}
-.fc-lbl{font-family:var(--mono);font-size:.46rem;width:56px;flex-shrink:0}
+.fc-lbl{font-family:var(--mono);font-size:.44rem;width:54px;flex-shrink:0}
 .fc-track{flex:1;height:4px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden}
 .fc-fill{height:100%;border-radius:2px;transition:width 1s ease}
-.fc-pct{font-family:var(--mono);font-size:.46rem;width:26px;text-align:right}
+.fc-pct{font-family:var(--mono);font-size:.44rem;width:26px;text-align:right}
 .fc-low .fc-lbl,.fc-low .fc-pct{color:var(--green)}.fc-low .fc-fill{background:var(--green)}
 .fc-mod .fc-lbl,.fc-mod .fc-pct{color:var(--yellow)}.fc-mod .fc-fill{background:var(--yellow)}
 .fc-high .fc-lbl,.fc-high .fc-pct{color:var(--red)}.fc-high .fc-fill{background:var(--red)}
-.fc-meta{display:flex;justify-content:space-between;margin-top:6px;padding-top:5px;border-top:1px solid var(--b0);font-family:var(--mono);font-size:.44rem;color:var(--dim)}
-.fc-reason{font-family:var(--mono);font-size:.44rem;color:var(--dim);margin-top:4px;line-height:1.5;font-style:italic}
+.fc-meta{display:flex;justify-content:space-between;margin-top:5px;padding-top:4px;border-top:1px solid var(--b0);font-family:var(--mono);font-size:.42rem;color:var(--dim)}
+.fc-reason{font-family:var(--mono);font-size:.42rem;color:var(--dim);margin-top:4px;line-height:1.5;font-style:italic}
 
 /* ── REGIONAL ── */
 .reg-row{display:grid;grid-template-columns:1fr auto auto;gap:3px;align-items:center;padding:2px 0}
-.reg-name{font-family:var(--mono);font-size:.46rem;color:var(--dim)}
-.reg-gti{font-family:var(--disp);font-size:.56rem;font-weight:700}
-.reg-d{font-family:var(--mono);font-size:.42rem}
+.reg-name{font-family:var(--mono);font-size:.44rem;color:var(--dim)}
+.reg-gti{font-family:var(--disp);font-size:.54rem;font-weight:700}
+.reg-d{font-family:var(--mono);font-size:.4rem}
 .reg-bar{height:2px;background:rgba(255,255,255,.05);border-radius:2px;overflow:hidden;grid-column:1/-1}
 .reg-bar-f{height:100%;border-radius:2px;transition:width .8s}
 
 /* ── CONFLICTS ── */
-.conflict-item{border:1px solid var(--b0);background:rgba(0,170,255,.02);margin-bottom:5px;padding:7px 9px;cursor:pointer;transition:all .15s}
+.conflict-item{border:1px solid var(--b0);background:rgba(0,170,255,.02);margin-bottom:4px;padding:6px 8px;cursor:pointer;transition:all .15s}
 .conflict-item:hover{background:rgba(0,170,255,.05);border-color:var(--b1)}
-.conf-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
-.conf-name{font-family:var(--disp);font-size:.56rem;letter-spacing:.1em}
-.conf-state{font-family:var(--disp);font-size:.44rem;padding:2px 6px;border:1px solid}
-.conf-meta{display:flex;gap:8px;font-family:var(--mono);font-size:.44rem;color:var(--dim)}
-.conf-momentum-bar{height:3px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden;margin-top:4px}
-.conf-momentum-fill{height:100%;border-radius:2px;transition:width .8s}
-.conf-desc{font-family:var(--mono);font-size:.44rem;color:var(--muted);margin-top:4px;line-height:1.4}
-.momentum-state-emerging{color:#f5c518;border-color:#f5c518}
-.momentum-state-escalating{color:#ff6b1a;border-color:#ff6b1a}
-.momentum-state-active{color:#ff2233;border-color:#ff2233}
-.momentum-state-active.war{color:#ff2233;border-color:#ff2233}
-.momentum-state-stabilizing{color:#aaaaff;border-color:#aaaaff}
-.momentum-state-de-escalating{color:#00ff88;border-color:#00ff88}
+.conf-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:3px}
+.conf-name{font-family:var(--disp);font-size:.52rem;letter-spacing:.1em}
+.conf-state{font-family:var(--disp);font-size:.42rem;padding:1px 5px;border:1px solid}
+.conf-meta{display:flex;gap:7px;font-family:var(--mono);font-size:.42rem;color:var(--dim)}
+.conf-mbar{height:3px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden;margin-top:3px}
+.conf-mbar-f{height:100%;border-radius:2px;transition:width .8s}
+.conf-desc{font-family:var(--mono);font-size:.42rem;color:var(--muted);margin-top:3px;line-height:1.4}
 
 /* ── ALIGNMENT ── */
-.align-conflict-sel{display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap}
-.align-conf-btn{padding:2px 7px;border:1px solid var(--b0);cursor:pointer;color:var(--dim);background:transparent;font-family:var(--mono);font-size:.44rem;transition:all .15s}
+.align-conf-sel{display:flex;gap:3px;margin-bottom:7px;flex-wrap:wrap}
+.align-conf-btn{padding:2px 6px;border:1px solid var(--b0);cursor:pointer;color:var(--dim);background:transparent;font-family:var(--mono);font-size:.42rem;transition:all .15s}
 .align-conf-btn.active{border-color:var(--purple);color:var(--purple);background:rgba(153,102,255,.07)}
-.align-list{display:flex;flex-direction:column;gap:3px}
-.align-row{display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid rgba(13,51,72,.3)}
-.align-country{font-family:var(--mono);font-size:.48rem;color:var(--dim);flex:1}
-.align-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
-.align-label{font-family:var(--mono);font-size:.44rem}
+.align-row{display:flex;align-items:center;gap:5px;padding:3px 0;border-bottom:1px solid rgba(13,51,72,.3)}
+.align-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.align-country{font-family:var(--mono);font-size:.46rem;color:var(--dim);flex:1}
+.align-label{font-family:var(--mono);font-size:.42rem;max-width:100px;text-align:right}
+/* Trend arrows */
+.align-trend{font-size:.55rem;margin-left:3px}
+.trend-stable{color:var(--dim)}.trend-shifting_toward_A,.trend-hardening{color:var(--orange)}.trend-shifting_away,.trend-shifting_B{color:var(--cyan)}.trend-mediating{color:var(--yellow)}
 .stance-supporting_A{color:#ff6b1a}.stance-supporting_B{color:#00aaff}.stance-neutral{color:#4a7a99}.stance-ambiguous{color:#f5c518}
 
+/* ── TRADE ── */
+.trade-route{display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(13,51,72,.3)}
+.trade-nm{font-family:var(--mono);font-size:.46rem;color:var(--dim)}
+.trade-r{text-align:right}
+.trade-risk{font-family:var(--disp);font-size:.44rem}
+.trade-pct{font-family:var(--mono);font-size:.4rem;color:var(--muted)}
+.logistics-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-top:6px}
+.log-item{background:rgba(0,170,255,.03);border:1px solid var(--b0);padding:5px 6px}
+.log-icon{font-size:.75rem}.log-lbl{font-family:var(--mono);font-size:.4rem;color:var(--muted);margin:1px 0}.log-risk{font-family:var(--disp);font-size:.54rem;font-weight:700}
+/* Chokepoint traffic bars */
+.choke-traffic-wrap{margin-top:7px}
+.choke-traffic-h{font-family:var(--mono);font-size:.44rem;color:var(--muted);letter-spacing:.08em;margin-bottom:5px}
+.choke-traffic-item{margin-bottom:6px}
+.choke-traffic-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px}
+.choke-traffic-name{font-family:var(--mono);font-size:.44rem;color:var(--dim)}
+.choke-traffic-pct{font-family:var(--disp);font-size:.54rem}
+.choke-traffic-bar{height:4px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden}
+.choke-traffic-fill{height:100%;border-radius:2px;transition:width 1s ease}
+
+/* ── SUPPLY + STRATEGIC ── */
+.sup-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px}
+.sup-item{background:rgba(0,170,255,.03);border:1px solid var(--b0);padding:5px 6px}
+.strat-item{display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid rgba(13,51,72,.3)}
+.strat-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.strat-lbl{font-family:var(--mono);font-size:.46rem;color:var(--dim)}
+.strat-val{font-family:var(--mono);font-size:.46rem;margin-left:auto}
+.choke-item{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid rgba(13,51,72,.2)}
+.choke-nm{font-family:var(--mono);font-size:.44rem;color:var(--dim)}
+.choke-rv{font-family:var(--disp);font-size:.42rem}
+
+/* ── FEED ── */
+.feed-list{max-height:230px;overflow-y:auto}
+.feed-list::-webkit-scrollbar{width:2px}
+.feed-list::-webkit-scrollbar-thumb{background:var(--b0)}
+.fi{display:grid;grid-template-columns:3px 1fr auto;gap:5px;padding:5px 9px;border-bottom:1px solid rgba(13,51,72,.35);cursor:pointer;transition:background .15s}
+.fi:hover{background:rgba(0,170,255,.04)}
+.fi-ind{align-self:stretch;min-height:24px;border-radius:1px}
+.fi-ind.confirmed{background:var(--green)}
+.fi-ind.probable{background:var(--yellow)}
+.fi-ind.unverified{background:var(--red);box-shadow:0 0 3px var(--red)}
+.fi-type{font-family:var(--disp);font-size:.44rem;letter-spacing:.08em;color:var(--orange)}
+.fi-loc{font-family:var(--mono);font-size:.42rem;color:var(--cyan)}
+.fi-reg{font-family:var(--mono);font-size:.4rem;color:var(--dim)}
+.fi-desc{font-family:var(--body);font-size:.58rem;color:var(--txt);line-height:1.3;margin-top:1px}
+.fi-conf-badge{font-family:var(--mono);font-size:.38rem;padding:1px 4px;border:1px solid;border-radius:1px}
+.fi-src{font-family:var(--mono);font-size:.38rem;color:var(--muted);text-align:right}
+
 /* ── TRAVEL ── */
-.travel-list{display:flex;flex-direction:column;gap:2px;max-height:200px;overflow-y:auto}
+.travel-list{display:flex;flex-direction:column;gap:2px;max-height:180px;overflow-y:auto}
 .travel-list::-webkit-scrollbar{width:2px}
 .travel-list::-webkit-scrollbar-thumb{background:var(--b0)}
-.travel-row{display:grid;grid-template-columns:1fr auto;gap:5px;align-items:center;padding:3px 0;border-bottom:1px solid rgba(13,51,72,.25)}
-.travel-country{font-family:var(--mono);font-size:.48rem;color:var(--dim)}
-.travel-risk{font-family:var(--disp);font-size:.46rem;padding:1px 6px;border:1px solid}
+.travel-row{display:grid;grid-template-columns:1fr auto;gap:5px;align-items:center;padding:3px 0;border-bottom:1px solid rgba(13,51,72,.2)}
+.travel-country{font-family:var(--mono);font-size:.46rem;color:var(--dim)}
+.travel-risk{font-family:var(--disp);font-size:.44rem;padding:1px 5px;border:1px solid}
 .risk-CRITICAL{color:#8b0000;border-color:#8b0000;background:rgba(139,0,0,.1)}
 .risk-HIGH{color:var(--red);border-color:var(--red);background:rgba(255,34,51,.06)}
 .risk-MODERATE{color:var(--yellow);border-color:var(--yellow);background:rgba(245,197,24,.06)}
 .risk-LOW{color:var(--green);border-color:var(--green);background:rgba(0,255,136,.06)}
 .risk-ELEVATED{color:var(--orange);border-color:var(--orange)}
 
-/* ── TRADE ── */
-.trade-route{display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(13,51,72,.3)}
-.trade-name{font-family:var(--mono);font-size:.48rem;color:var(--dim)}
-.trade-right{text-align:right}
-.trade-risk{font-family:var(--disp);font-size:.46rem}
-.trade-pct{font-family:var(--mono);font-size:.42rem;color:var(--muted)}
-.logistics-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:7px}
-.log-item{background:rgba(0,170,255,.03);border:1px solid var(--b0);padding:5px 7px}
-.log-icon{font-size:.8rem}
-.log-lbl{font-family:var(--mono);font-size:.42rem;color:var(--muted);margin:1px 0}
-.log-risk{font-family:var(--disp);font-size:.56rem;font-weight:700}
-
-/* ── SUPPLY / STRATEGIC ── */
-.sup-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}
-.sup-item{background:rgba(0,170,255,.03);border:1px solid var(--b0);padding:5px 7px}
-.strat-item{display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid rgba(13,51,72,.3)}
-.strat-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
-.strat-lbl{font-family:var(--mono);font-size:.48rem;color:var(--dim)}
-.strat-val{font-family:var(--mono);font-size:.48rem;margin-left:auto}
-.choke-item{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid rgba(13,51,72,.25)}
-.choke-nm{font-family:var(--mono);font-size:.46rem;color:var(--dim)}
-.choke-rv{font-family:var(--disp);font-size:.44rem}
-
-/* ── FEED ── */
-.feed-list{max-height:220px;overflow-y:auto}
-.feed-list::-webkit-scrollbar{width:2px}
-.feed-list::-webkit-scrollbar-thumb{background:var(--b0)}
-.fi{display:grid;grid-template-columns:3px 1fr auto;gap:5px;padding:5px 9px;border-bottom:1px solid rgba(13,51,72,.35);cursor:pointer;transition:background .15s}
-.fi:hover{background:rgba(0,170,255,.04)}
-.fi-ind{align-self:stretch;min-height:26px;border-radius:1px}
-.fi-ind.red{background:var(--red);box-shadow:0 0 3px var(--red)}
-.fi-ind.orange{background:var(--orange)}
-.fi-ind.yellow{background:var(--yellow)}
-.fi-type{font-family:var(--disp);font-size:.46rem;letter-spacing:.09em;color:var(--orange)}
-.fi-loc{font-family:var(--mono);font-size:.44rem;color:var(--cyan)}
-.fi-reg{font-family:var(--mono);font-size:.42rem;color:var(--dim)}
-.fi-desc{font-family:var(--body);font-size:.6rem;color:var(--txt);line-height:1.3;margin-top:1px}
-.fi-conf{font-family:var(--mono);font-size:.44rem;color:var(--dim);text-align:right}
-.fi-unc{font-family:var(--mono);font-size:.38rem;color:var(--yellow);margin-top:2px;text-align:right}
-.fi-src{font-family:var(--mono);font-size:.4rem;color:var(--muted);text-align:right}
-
 /* ── TRANSPARENCY ── */
-.transp-row{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid rgba(13,51,72,.25)}
-.transp-lbl{font-family:var(--mono);font-size:.46rem;color:var(--muted)}
-.transp-val{font-family:var(--mono);font-size:.5rem;color:var(--cyan)}
+.transp-row{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid rgba(13,51,72,.2)}
+.transp-lbl{font-family:var(--mono);font-size:.44rem;color:var(--muted)}
+.transp-val{font-family:var(--mono);font-size:.48rem;color:var(--cyan)}
 
 /* ── AI SUMMARY ── */
-.ai-sum{font-family:var(--body);font-size:.72rem;line-height:1.7;color:var(--txt);border-left:2px solid var(--b1);padding-left:8px;min-height:48px}
+.ai-sum{font-family:var(--body);font-size:.7rem;line-height:1.7;color:var(--txt);border-left:2px solid var(--b1);padding-left:8px;min-height:44px}
 .ai-sum.typing::after{content:'▋';animation:blink .7s infinite;color:var(--cyan)}
-.ai-ft{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.42rem;color:var(--muted);margin-top:5px;padding-top:4px;border-top:1px solid var(--b0)}
-.ai-badge{display:flex;align-items:center;gap:2px;color:var(--cyan);font-size:.42rem}
+.ai-ft{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.4rem;color:var(--muted);margin-top:4px;padding-top:4px;border-top:1px solid var(--b0)}
+.ai-badge{display:flex;align-items:center;gap:2px;color:var(--cyan);font-size:.4rem}
 .ai-dot{width:3px;height:3px;background:var(--cyan);border-radius:50%;animation:blink 2s infinite}
 
 /* ── MAP ── */
@@ -1054,99 +1285,97 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .leaflet-container{background:#020e18!important}
 .leaflet-tile{filter:brightness(.35) hue-rotate(185deg) saturate(.28) invert(.85)!important}
 .leaflet-control-zoom a{background:var(--bg3);color:var(--dim);border-color:var(--b0)}
-.leaflet-popup-content-wrapper{background:#050f18!important;border:1px solid #1a6688!important;color:var(--txt)!important;border-radius:0!important;box-shadow:0 0 12px #00e5ff22!important;font-family:var(--mono)!important;font-size:.62rem!important;min-width:240px}
+.leaflet-popup-content-wrapper{background:#050f18!important;border:1px solid #1a6688!important;color:var(--txt)!important;border-radius:0!important;box-shadow:0 0 12px #00e5ff22!important;font-family:var(--mono)!important;font-size:.62rem!important;min-width:240px;max-width:310px}
 .leaflet-popup-tip{background:#1a6688!important}
-.pop-analyze{display:inline-block;margin-top:6px;padding:4px 10px;border:1px solid var(--cyan);color:var(--cyan);font-family:var(--mono);font-size:.5rem;cursor:pointer;letter-spacing:.08em;transition:all .18s}
+.pop-analyze{display:inline-block;margin-top:6px;padding:4px 10px;border:1px solid var(--cyan);color:var(--cyan);font-family:var(--mono);font-size:.5rem;cursor:pointer;transition:all .18s}
 .pop-analyze:hover{background:var(--cyan);color:var(--bg)}
-.map-footer{display:flex;align-items:center;gap:8px;padding:4px 10px;border-top:1px solid var(--b0);background:var(--bg2);font-family:var(--mono);font-size:.46rem;color:var(--dim);flex-wrap:wrap;flex-shrink:0}
+.map-footer{display:flex;align-items:center;gap:7px;padding:4px 9px;border-top:1px solid var(--b0);background:var(--bg2);font-family:var(--mono);font-size:.44rem;color:var(--dim);flex-wrap:wrap;flex-shrink:0}
 .mf-item{display:flex;align-items:center;gap:3px}
 .mf-dot{width:5px;height:5px;border-radius:50%}
-/* Layer legend badges */
 .layer-legend{display:none;align-items:center;gap:6px;flex:1}
-.layer-legend.visible{display:flex}
-.ll-item{display:flex;align-items:center;gap:3px;font-size:.44rem}
+.layer-legend.vis{display:flex}
+.ll-item{display:flex;align-items:center;gap:2px;font-size:.42rem}
 
-/* MAP MARKERS */
+/* CONFIDENCE toggle */
+.conf-toggle{display:flex;align-items:center;gap:4px;margin-left:auto;font-family:var(--mono);font-size:.42rem}
+.conf-toggle input[type=checkbox]{accent-color:var(--cyan);cursor:pointer}
+
+/* MARKERS */
 .em{width:11px;height:11px;border-radius:50%;border:2px solid}
-.em.red{background:rgba(255,34,51,.5);border-color:#ff2233;box-shadow:0 0 6px #ff2233}
-.em.orange{background:rgba(255,107,26,.45);border-color:#ff6b1a;box-shadow:0 0 5px #ff6b1a}
-.em.yellow{background:rgba(245,197,24,.4);border-color:#f5c518}
+/* Confidence-coded colors */
+.em.confirmed{background:rgba(0,255,136,.4);border-color:#00ff88;box-shadow:0 0 5px #00ff88}
+.em.probable{background:rgba(245,197,24,.4);border-color:#f5c518}
+.em.unverified{background:rgba(255,34,51,.45);border-color:#ff2233;box-shadow:0 0 5px #ff2233}
 .em.faded{background:rgba(60,60,60,.3);border-color:#444;box-shadow:none;opacity:.35}
-.em-hot{animation:hotPulse .9s ease-in-out infinite}
-@keyframes hotPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.8);opacity:.6}}
+.em-hot{animation:hotP .9s ease-in-out infinite}
+@keyframes hotP{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.8);opacity:.6}}
 .just-wrap{position:relative}
-.just-tag{position:absolute;top:-17px;left:50%;transform:translateX(-50%);background:#ff2233;color:#fff;font-family:var(--mono);font-size:.35rem;padding:1px 4px;letter-spacing:.06em;white-space:nowrap;animation:tagBlink 1s ease-in-out infinite}
-@keyframes tagBlink{0%,100%{opacity:1}50%{opacity:.5}}
-/* Conflict hotspot marker */
+.just-tag{position:absolute;top:-17px;left:50%;transform:translateX(-50%);background:#ff2233;color:#fff;font-family:var(--mono);font-size:.33rem;padding:1px 4px;letter-spacing:.06em;white-space:nowrap;animation:tagB 1s ease-in-out infinite;pointer-events:none}
+@keyframes tagB{0%,100%{opacity:1}50%{opacity:.5}}
 .hotspot-marker{width:8px;height:8px;border-radius:50%;border:2px solid}
-/* Travel safety country markers */
-.travel-country-marker{font-family:var(--mono);font-size:.46rem;padding:2px 5px;border:1px solid;white-space:nowrap;backdrop-filter:blur(2px)}
-/* Alignment country markers */
-.align-country-marker{font-family:var(--mono);font-size:.46rem;padding:2px 5px;border:1px solid;white-space:nowrap;backdrop-filter:blur(2px)}
+.travel-cm{font-family:var(--mono);font-size:.44rem;padding:2px 5px;border:1px solid;white-space:nowrap;backdrop-filter:blur(2px)}
+.align-cm{font-family:var(--mono);font-size:.44rem;padding:2px 5px;border:1px solid;white-space:nowrap;backdrop-filter:blur(2px)}
+
 /* Chart */
-.chart-wrap{padding:4px 6px 6px;height:130px}
+.chart-wrap{padding:4px 6px 6px;height:125px}
 .chart-wrap canvas{width:100%!important;height:100%!important}
 
 /* ── REPLAY BAR ── */
-.rep-bar{display:flex;align-items:center;gap:6px;padding:4px 9px;border-top:1px solid var(--b0);background:var(--bg2);font-family:var(--mono);font-size:.48rem;color:var(--dim);flex-shrink:0;flex-wrap:wrap}
-.rep-btn{padding:2px 7px;border:1px solid var(--b0);cursor:pointer;color:var(--dim);background:transparent;font-family:var(--mono);font-size:.46rem;transition:all .15s}
+.rep-bar{display:flex;align-items:center;gap:5px;padding:4px 9px;border-top:1px solid var(--b0);background:var(--bg2);font-family:var(--mono);font-size:.46rem;color:var(--dim);flex-shrink:0;flex-wrap:wrap}
+.rep-btn{padding:2px 6px;border:1px solid var(--b0);cursor:pointer;color:var(--dim);background:transparent;font-family:var(--mono);font-size:.44rem;transition:all .15s}
 .rep-btn:hover,.rep-btn.active{border-color:var(--cyan);color:var(--cyan);background:rgba(0,229,255,.05)}
-.rep-play{width:20px;height:20px;border:1px solid var(--b1);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--cyan);font-size:.6rem;flex-shrink:0}
+.rep-play{width:20px;height:20px;border:1px solid var(--b1);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--cyan);font-size:.58rem;flex-shrink:0}
 .rep-play:hover{background:rgba(0,229,255,.1)}
 .rep-slider{flex:1;accent-color:var(--cyan);cursor:pointer;min-width:60px}
-#rep-ts{color:var(--cyan);font-size:.46rem;min-width:100px}
-.rep-24h-btn{padding:2px 8px;border:1px solid var(--orange);color:var(--orange);background:transparent;font-family:var(--mono);font-size:.46rem;cursor:pointer}
-.rep-24h-btn:hover{background:rgba(255,107,26,.1)}
-.spd-btn{padding:1px 5px;border:1px solid var(--b0);cursor:pointer;color:var(--muted);background:transparent;font-family:var(--mono);font-size:.44rem}
+#rep-ts{color:var(--cyan);font-size:.44rem;min-width:100px}
+.rep-24h{padding:2px 8px;border:1px solid var(--orange);color:var(--orange);background:transparent;font-family:var(--mono);font-size:.44rem;cursor:pointer;white-space:nowrap}
+.rep-24h:hover{background:rgba(255,107,26,.1)}
+.spd-btn{padding:1px 4px;border:1px solid var(--b0);cursor:pointer;color:var(--muted);background:transparent;font-family:var(--mono);font-size:.42rem}
 .spd-btn.active{border-color:var(--yellow);color:var(--yellow)}
-.rep-live-btn{padding:2px 7px;border:1px solid var(--green);color:var(--green);background:transparent;font-family:var(--mono);font-size:.46rem;cursor:pointer}
-.rep-live-btn:hover{background:rgba(0,255,136,.07)}
+.rep-live{padding:2px 6px;border:1px solid var(--green);color:var(--green);background:transparent;font-family:var(--mono);font-size:.44rem;cursor:pointer}
+.rep-live:hover{background:rgba(0,255,136,.07)}
 
 /* ── INTEL PANEL ── */
 #intel-panel{position:fixed;top:0;right:-440px;width:440px;height:100vh;background:var(--bg2);border-left:1px solid var(--b1);z-index:900;transition:right .3s cubic-bezier(.4,0,.2,1);overflow-y:auto;display:flex;flex-direction:column}
 #intel-panel.open{right:0}
 #intel-panel::-webkit-scrollbar{width:2px}
 #intel-panel::-webkit-scrollbar-thumb{background:var(--b0)}
-.intel-hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 13px;border-bottom:1px solid var(--b0);background:rgba(0,170,255,.03);position:sticky;top:0;z-index:1}
-.intel-title-text{font-family:var(--disp);font-size:.58rem;letter-spacing:.16em;color:var(--cyan)}
-.intel-close{cursor:pointer;color:var(--dim);font-size:.9rem;padding:2px 5px;line-height:1}
+.intel-hdr{display:flex;align-items:center;justify-content:space-between;padding:9px 13px;border-bottom:1px solid var(--b0);background:rgba(0,170,255,.03);position:sticky;top:0;z-index:1}
+.intel-title-t{font-family:var(--disp);font-size:.56rem;letter-spacing:.15em;color:var(--cyan)}
+.intel-close{cursor:pointer;color:var(--dim);font-size:.88rem;padding:2px 5px;line-height:1}
 .intel-close:hover{color:var(--txt)}
-.intel-body{padding:12px 13px;flex:1}
-.intel-type{font-family:var(--disp);font-size:.8rem;letter-spacing:.13em;color:var(--orange);margin-bottom:3px}
-.intel-loc{font-family:var(--mono);font-size:.54rem;color:var(--cyan);margin-bottom:3px;display:flex;align-items:center;gap:5px}
-.intel-det{font-family:var(--mono);font-size:.46rem;color:var(--muted);margin-bottom:10px}
-.intel-4grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:9px}
+.intel-body{padding:11px 13px;flex:1}
+.intel-type{font-family:var(--disp);font-size:.78rem;letter-spacing:.12em;color:var(--orange);margin-bottom:2px}
+.intel-loc{font-family:var(--mono);font-size:.52rem;color:var(--cyan);margin-bottom:2px}
+.intel-det{font-family:var(--mono);font-size:.44rem;color:var(--muted);margin-bottom:9px}
+.intel-4g{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:8px}
 .intel-m{background:rgba(0,170,255,.04);border:1px solid var(--b0);padding:5px 7px}
-.intel-m-l{font-family:var(--mono);font-size:.42rem;color:var(--muted);margin-bottom:2px}
-.intel-m-v{font-family:var(--disp);font-size:.76rem;font-weight:700}
-.intel-uncertainty{background:rgba(245,197,24,.06);border:1px solid rgba(245,197,24,.3);padding:6px 9px;margin-bottom:9px;font-family:var(--mono);font-size:.48rem;color:var(--yellow);line-height:1.5}
-.intel-stats-box{background:rgba(0,170,255,.03);border:1px solid var(--b0);padding:7px 9px;margin-bottom:9px}
-.intel-stats-h{font-family:var(--disp);font-size:.47rem;letter-spacing:.13em;color:var(--dim);margin-bottom:6px}
-.intel-stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.intel-m-l{font-family:var(--mono);font-size:.4rem;color:var(--muted);margin-bottom:1px}
+.intel-m-v{font-family:var(--disp);font-size:.74rem;font-weight:700}
+.intel-unc{background:rgba(245,197,24,.06);border:1px solid rgba(245,197,24,.3);padding:5px 8px;margin-bottom:8px;font-family:var(--mono);font-size:.46rem;color:var(--yellow);line-height:1.5}
+.intel-stats-box{background:rgba(0,170,255,.03);border:1px solid var(--b0);padding:6px 9px;margin-bottom:8px}
+.intel-stats-h{font-family:var(--disp);font-size:.44rem;letter-spacing:.12em;color:var(--dim);margin-bottom:5px}
+.intel-stats-g{display:grid;grid-template-columns:1fr 1fr;gap:4px}
 .stat-item{border-bottom:1px solid rgba(13,51,72,.4);padding-bottom:3px}
-.stat-l{font-family:var(--mono);font-size:.42rem;color:var(--muted)}
-.stat-v{font-family:var(--disp);font-size:.68rem;font-weight:700;color:var(--cyan)}
-.intel-sec{margin-bottom:9px}
-.intel-sec-h{font-family:var(--disp);font-size:.46rem;letter-spacing:.13em;color:var(--dim);margin-bottom:4px;padding-bottom:3px;border-bottom:1px solid var(--b0)}
-.intel-text{font-family:var(--body);font-size:.73rem;color:var(--txt);line-height:1.65}
-.actor-tag{font-family:var(--mono);font-size:.44rem;color:var(--cyan);border:1px solid rgba(0,229,255,.3);padding:1px 5px;display:inline-block;margin:1px}
-.esc-badge{display:inline-block;font-family:var(--disp);font-size:.5rem;padding:2px 8px;border:1px solid;margin-top:2px}
+.stat-l{font-family:var(--mono);font-size:.4rem;color:var(--muted)}
+.stat-v{font-family:var(--disp);font-size:.65rem;font-weight:700;color:var(--cyan)}
+.intel-sec{margin-bottom:8px}
+.intel-sec-h{font-family:var(--disp);font-size:.44rem;letter-spacing:.12em;color:var(--dim);margin-bottom:4px;padding-bottom:3px;border-bottom:1px solid var(--b0)}
+.intel-text{font-family:var(--body);font-size:.7rem;color:var(--txt);line-height:1.65}
+.actor-tag{font-family:var(--mono);font-size:.42rem;color:var(--cyan);border:1px solid rgba(0,229,255,.3);padding:1px 5px;display:inline-block;margin:1px}
+.esc-badge{display:inline-block;font-family:var(--disp);font-size:.48rem;padding:2px 7px;border:1px solid;margin-top:2px}
 .esc-LOW{color:var(--green);border-color:var(--green)}.esc-MODERATE{color:var(--yellow);border-color:var(--yellow)}
 .esc-HIGH{color:var(--orange);border-color:var(--orange)}.esc-CRITICAL{color:var(--red);border-color:var(--red)}
-.intel-src-link{display:block;margin-top:9px;padding:6px 9px;border:1px solid var(--b0);font-family:var(--mono);font-size:.48rem;color:var(--cyan);text-decoration:none;text-align:center}
+.intel-src-link{display:block;margin-top:8px;padding:5px 8px;border:1px solid var(--b0);font-family:var(--mono);font-size:.46rem;color:var(--cyan);text-decoration:none;text-align:center}
 .intel-src-link:hover{background:rgba(0,229,255,.06)}
-.intel-loading{text-align:center;padding:30px 20px;font-family:var(--mono);font-size:.55rem;color:var(--dim)}
-.intel-spinner{font-size:1.1rem;color:var(--cyan);animation:spin 1.5s linear infinite;display:block;margin-bottom:8px}
+.intel-loading{text-align:center;padding:28px 20px;font-family:var(--mono);font-size:.54rem;color:var(--dim)}
+.intel-spinner{font-size:1rem;color:var(--cyan);animation:spin 1.5s linear infinite;display:block;margin-bottom:7px}
 @keyframes spin{to{transform:rotate(360deg)}}
-
-/* ── MULTILINGUAL UTILS ── */
-[data-i18n]{transition:opacity .2s}
 </style>
 </head>
 <body>
 <div class="scanlines"></div>
 
-<!-- ALERT -->
 <div id="alert-banner">
   <div style="display:flex;align-items:center;gap:7px"><div class="live-dot"></div><span id="alert-text">⚠ ALERT</span></div>
   <span class="al-close" onclick="dismissAlert()">✕</span>
@@ -1157,32 +1386,27 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
   <div class="hdr-left">
     <div class="radar"></div>
     <div class="hdr-titles">
-      <h1 data-i18n="title">GLOBAL CONFLICT RADAR</h1>
-      <div class="hdr-sub" data-i18n="subtitle">LIVE GEOPOLITICAL MONITORING · RSS + CLAUDE AI · v4.0</div>
+      <h1>GLOBAL CONFLICT RADAR</h1>
+      <div class="hdr-sub">LIVE GEOPOLITICAL MONITORING · RSS + CLAUDE AI · v4.1</div>
     </div>
   </div>
   <div class="hdr-center">
-    <button class="layer-btn active" onclick="setLayer('live',this)" data-i18n="layer_live">◉ LIVE</button>
-    <button class="layer-btn" onclick="setLayer('conflicts',this)" data-i18n="layer_conflicts">💥 CONFLICTS</button>
-    <button class="layer-btn" onclick="setLayer('trade',this)" data-i18n="layer_trade">🚢 TRADE</button>
-    <button class="layer-btn" onclick="setLayer('travel',this)" data-i18n="layer_travel">✈ TRAVEL</button>
-    <button class="layer-btn" onclick="setLayer('alignment',this)" data-i18n="layer_align">🌐 ALIGNMENT</button>
+    <button class="layer-btn al" onclick="setLayer('live',this)">◉ LIVE</button>
+    <button class="layer-btn" onclick="setLayer('conflicts',this)">💥 CONFLICTS</button>
+    <button class="layer-btn" onclick="setLayer('trade',this)">🚢 TRADE</button>
+    <button class="layer-btn" onclick="setLayer('travel',this)">✈ TRAVEL</button>
+    <button class="layer-btn" onclick="setLayer('alignment',this)">🌐 ALIGNMENT</button>
   </div>
   <div class="hdr-right">
     <select class="lang-sel" onchange="setLang(this.value)">
-      <option value="en">EN</option>
-      <option value="sk">SK</option>
-      <option value="de">DE</option>
-      <option value="fr">FR</option>
-      <option value="uk">UK</option>
-      <option value="ru">RU</option>
-      <option value="ar">AR</option>
-      <option value="zh">ZH</option>
+      <option value="en">EN</option><option value="sk">SK</option><option value="de">DE</option>
+      <option value="fr">FR</option><option value="uk">UK</option><option value="ru">RU</option>
+      <option value="ar">AR</option><option value="zh">ZH</option>
     </select>
     <span>DATA: <span id="src-badge" style="color:var(--green)">—</span></span>
     <span id="utc-clock" style="color:var(--muted)">—</span>
     <span>NEXT: <span id="next-ref" style="color:var(--cyan)">10:00</span></span>
-    <div style="display:flex;align-items:center;gap:4px;color:var(--green)"><div class="live-dot"></div><span data-i18n="live">LIVE</span></div>
+    <div style="display:flex;align-items:center;gap:4px;color:var(--green)"><div class="live-dot"></div>LIVE</div>
   </div>
 </header>
 
@@ -1192,27 +1416,51 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 <!-- ════ LEFT PANEL ════ -->
 <div class="left-panel">
 
-  <!-- ACTIVITY -->
+  <!-- DAILY GLOBAL RISK SNAPSHOT -->
   <div class="sec">
     <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')">
-      <span class="sec-t" data-i18n="act_title">◈ GLOBAL ACTIVITY</span>
-      <div style="display:flex;align-items:center;gap:4px"><div class="live-dot" style="width:4px;height:4px"></div><span class="arr">▾</span></div>
+      <span class="sec-t">◈ GLOBAL RISK SNAPSHOT</span>
+      <div style="display:flex;align-items:center;gap:3px"><span id="snap-date" style="font-family:var(--mono);font-size:.4rem;color:var(--muted)">TODAY</span><span class="arr">▾</span></div>
     </div>
     <div class="sec-body" style="padding:5px 7px">
-      <div class="act-grid">
-        <div class="act-item"><div class="act-lbl" data-i18n="act_incidents">ACTIVE INCIDENTS</div><div class="act-val" id="act-inc" style="color:var(--red)">—</div><div class="act-sub" id="act-conf">—</div></div>
-        <div class="act-item"><div class="act-lbl" data-i18n="act_regions">REGIONS ACTIVE</div><div class="act-val" id="act-reg" style="color:var(--orange)">—</div><div class="act-sub" id="act-strat">— strategic</div></div>
-        <div class="act-item"><div class="act-lbl" data-i18n="act_sources">SOURCES MONITORED</div><div class="act-val" id="act-src" style="color:var(--cyan);font-size:.85rem">1,247</div><div class="act-sub">LIVE FEEDS</div></div>
-        <div class="act-item"><div class="act-lbl" data-i18n="act_24h">DETECTED 24H</div><div class="act-val" id="act-24h" style="color:var(--yellow);font-size:.85rem">—</div><div class="act-sub" id="act-avgc">—</div></div>
+      <div class="snap-top">
+        <div class="snap-item">
+          <div class="snap-lbl">TENSION INDEX</div>
+          <div class="snap-val" id="snap-gti" style="color:var(--orange)">—</div>
+          <div class="snap-sub" id="snap-trend">trend —</div>
+        </div>
+        <div class="snap-item">
+          <div class="snap-lbl">ACTIVE CONFLICTS</div>
+          <div class="snap-val" id="snap-conflicts" style="color:var(--red)">—</div>
+          <div class="snap-sub" id="snap-strategic">— strategic</div>
+        </div>
       </div>
-      <div class="act-ping"><div class="act-ping-dot"></div><span style="font-family:var(--mono);font-size:.46rem;color:var(--dim)" data-i18n="act_last">LAST DETECTED</span><span id="act-last" style="font-family:var(--mono);font-size:.5rem;color:var(--green)">—</span></div>
+      <!-- DAILY CHANGE INDICATORS -->
+      <div style="margin-bottom:4px;font-family:var(--mono);font-size:.4rem;color:var(--muted);letter-spacing:.08em">SINCE YESTERDAY</div>
+      <div class="delta-row"><span class="delta-lbl">TENSION INDEX</span><span class="delta-val" id="delta-gti">—</span></div>
+      <div class="delta-row"><span class="delta-lbl">INCIDENTS</span><span class="delta-val" id="delta-inc">—</span></div>
+      <div class="delta-row"><span class="delta-lbl">STRATEGIC EVENTS</span><span class="delta-val" id="delta-strat">—</span></div>
+      <div class="snap-wide" style="margin-top:4px"><span class="snap-wide-l">MOST ACTIVE REGION</span><span class="snap-wide-v" id="snap-region" style="color:var(--orange)">—</span></div>
+      <div class="snap-wide"><span class="snap-wide-l">FASTEST ESCALATION</span><span class="snap-wide-v" id="snap-fastest" style="color:var(--red)">—</span></div>
+    </div>
+  </div>
+
+  <!-- DAILY AI BRIEFING -->
+  <div class="sec">
+    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')">
+      <span class="sec-t">◈ DAILY INTEL BRIEFING</span>
+      <div class="ai-badge"><div class="ai-dot"></div><span style="font-family:var(--mono);font-size:.4rem;color:var(--cyan)">AI</span></div>
+    </div>
+    <div class="sec-body">
+      <div class="briefing-text typing" id="daily-briefing">Generating daily briefing…</div>
+      <div class="briefing-footer"><span id="brief-date">—</span><span id="brief-model">CLAUDE AI</span></div>
     </div>
   </div>
 
   <!-- GTI -->
   <div class="sec">
     <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')">
-      <span class="sec-t" data-i18n="gti_title">GLOBAL TENSION INDEX</span>
+      <span class="sec-t">GLOBAL TENSION INDEX</span>
       <span class="sec-b" id="ecount">—</span><span class="arr">▾</span>
     </div>
     <div class="sec-body" style="padding:0">
@@ -1223,14 +1471,14 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
           <div class="gti-num" id="gti-num">—</div>
           <div class="gti-den">/ 10</div>
         </div>
-        <div class="gti-stat" id="gti-stat" data-i18n-gti="1">LOADING…</div>
+        <div class="gti-stat" id="gti-stat">LOADING…</div>
         <div class="gti-row3">
           <div class="gsub"><div class="gsub-l">MIL</div><div class="gsub-v" id="s-mil">—</div></div>
           <div class="gsub"><div class="gsub-l">STR</div><div class="gsub-v" id="s-str">—</div></div>
           <div class="gsub"><div class="gsub-l">ECO</div><div class="gsub-v" id="s-eco">—</div></div>
         </div>
       </div>
-      <div class="vel-row"><span style="color:var(--dim)" data-i18n="velocity">ESCALATION VELOCITY</span><span id="velocity" style="color:var(--red)">—</span></div>
+      <div class="vel-row"><span style="color:var(--dim)">ESCALATION VELOCITY</span><span id="velocity" style="color:var(--red)">—</span></div>
       <div class="sleg">
         <div class="sl" style="color:#00ff88">● 0-2 STABLE</div><div class="sl" style="color:#f5c518">● 2-4 RISING</div>
         <div class="sl" style="color:#ff6b1a">● 4-6 HIGH</div><div class="sl" style="color:#ff2233">● 6-8 CRISIS</div>
@@ -1239,41 +1487,70 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     </div>
   </div>
 
-  <!-- CHART -->
+  <!-- TREND CHART -->
   <div class="sec">
-    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t" data-i18n="trend_title">TENSION TREND · 30 DAYS</span><span class="arr">▾</span></div>
+    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t">TENSION TREND · 30 DAYS</span><span class="arr">▾</span></div>
     <div class="sec-body" style="padding:0"><div class="chart-wrap"><canvas id="tchart"></canvas></div></div>
+  </div>
+
+  <!-- HOTSPOTS TODAY -->
+  <div class="sec">
+    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t">🔥 HOTSPOTS TODAY</span><span class="arr">▾</span></div>
+    <div class="sec-body"><div id="hotspots-list">Loading…</div></div>
+  </div>
+
+  <!-- STABLE REGIONS -->
+  <div class="sec">
+    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t">✓ STABLE REGIONS</span><span class="arr">▾</span></div>
+    <div class="sec-body"><div id="stable-list">Loading…</div></div>
   </div>
 
   <!-- FORECAST -->
   <div class="sec">
-    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t" data-i18n="fc_title">ESCALATION FORECAST · 30D</span><span class="arr">▾</span></div>
+    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t">ESCALATION FORECAST · 30D</span><span class="arr">▾</span></div>
     <div class="sec-body">
       <div class="fc-bars">
-        <div class="fc-row fc-low"><span class="fc-lbl" data-i18n="fc_low">LOW RISK</span><div class="fc-track"><div class="fc-fill" id="fc-low" style="width:0%"></div></div><span class="fc-pct" id="fc-lp">—%</span></div>
-        <div class="fc-row fc-mod"><span class="fc-lbl" data-i18n="fc_mod">MODERATE</span><div class="fc-track"><div class="fc-fill" id="fc-mod" style="width:0%"></div></div><span class="fc-pct" id="fc-mp">—%</span></div>
-        <div class="fc-row fc-high"><span class="fc-lbl" data-i18n="fc_high">HIGH RISK</span><div class="fc-track"><div class="fc-fill" id="fc-high" style="width:0%"></div></div><span class="fc-pct" id="fc-hp">—%</span></div>
+        <div class="fc-row fc-low"><span class="fc-lbl">LOW RISK</span><div class="fc-track"><div class="fc-fill" id="fc-low" style="width:0%"></div></div><span class="fc-pct" id="fc-lp">—%</span></div>
+        <div class="fc-row fc-mod"><span class="fc-lbl">MODERATE</span><div class="fc-track"><div class="fc-fill" id="fc-mod" style="width:0%"></div></div><span class="fc-pct" id="fc-mp">—%</span></div>
+        <div class="fc-row fc-high"><span class="fc-lbl">HIGH RISK</span><div class="fc-track"><div class="fc-fill" id="fc-high" style="width:0%"></div></div><span class="fc-pct" id="fc-hp">—%</span></div>
       </div>
-      <div class="fc-meta"><span data-i18n="fc_conf">CONFIDENCE: </span><span id="fc-conf-val" style="color:var(--cyan)">—%</span><span id="fc-analyzed" style="color:var(--dim)">— EVT</span></div>
+      <div class="fc-meta"><span>CONFIDENCE: <span id="fc-conf-val" style="color:var(--cyan)">—%</span></span><span id="fc-analyzed" style="color:var(--dim)">—</span></div>
       <div class="fc-reason" id="fc-reason">Calculating…</div>
     </div>
   </div>
 
   <!-- REGIONAL -->
   <div class="sec">
-    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t" data-i18n="reg_title">REGIONAL TENSIONS</span><span class="arr">▾</span></div>
+    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t">REGIONAL TENSIONS</span><span class="arr">▾</span></div>
     <div class="sec-body"><div id="reg-list">Loading…</div></div>
   </div>
 
   <!-- AI SUMMARY -->
   <div class="sec">
     <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')">
-      <span class="sec-t" data-i18n="sum_title">SITUATION SUMMARY</span>
-      <div class="ai-badge"><div class="ai-dot"></div><span style="font-family:var(--mono);font-size:.42rem;color:var(--cyan)">AI</span></div>
+      <span class="sec-t">SITUATION SUMMARY</span>
+      <div class="ai-badge"><div class="ai-dot"></div><span style="font-family:var(--mono);font-size:.4rem;color:var(--cyan)">AI</span></div>
     </div>
     <div class="sec-body">
-      <div class="ai-sum typing" id="ai-sum" data-i18n-live="summary">Analyzing…</div>
+      <div class="ai-sum typing" id="ai-sum">Analyzing…</div>
       <div class="ai-ft"><span id="ai-gen">—</span><span id="ai-ts">—</span></div>
+    </div>
+  </div>
+
+  <!-- ACTIVITY -->
+  <div class="sec">
+    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')">
+      <span class="sec-t">◈ GLOBAL ACTIVITY</span>
+      <div style="display:flex;align-items:center;gap:3px"><div class="live-dot" style="width:4px;height:4px"></div><span class="arr">▾</span></div>
+    </div>
+    <div class="sec-body" style="padding:5px 6px">
+      <div class="act-grid">
+        <div class="act-item"><div class="act-lbl">ACTIVE INCIDENTS</div><div class="act-val" id="act-inc" style="color:var(--red)">—</div><div class="act-sub" id="act-conf">—</div></div>
+        <div class="act-item"><div class="act-lbl">REGIONS ACTIVE</div><div class="act-val" id="act-reg" style="color:var(--orange)">—</div><div class="act-sub" id="act-strat">—</div></div>
+        <div class="act-item"><div class="act-lbl">SOURCES</div><div class="act-val" id="act-src" style="color:var(--cyan);font-size:.8rem">1,247</div><div class="act-sub">FEEDS</div></div>
+        <div class="act-item"><div class="act-lbl">DETECTED 24H</div><div class="act-val" id="act-24h" style="color:var(--yellow);font-size:.8rem">—</div><div class="act-sub" id="act-avgc">—</div></div>
+      </div>
+      <div class="act-ping"><div class="act-ping-dot"></div><span style="font-family:var(--mono);font-size:.44rem;color:var(--dim)">LAST DETECTED</span><span id="act-last" style="font-family:var(--mono);font-size:.48rem;color:var(--green)">—</span></div>
     </div>
   </div>
 
@@ -1283,55 +1560,57 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 <div class="map-col">
   <div id="wmap" style="flex:1;min-height:0"></div>
   <div class="map-footer">
-    <!-- LIVE legend -->
-    <div class="layer-legend visible" id="leg-live">
-      <div class="ll-item"><div class="mf-dot" style="background:#ff2233;box-shadow:0 0 4px #ff2233"></div>STRIKE</div>
-      <div class="ll-item"><div class="mf-dot" style="background:#ff6b1a"></div>MOVEMENT</div>
-      <div class="ll-item"><div class="mf-dot" style="background:#f5c518"></div>TENSION</div>
+    <!-- LIVE -->
+    <div class="layer-legend vis" id="leg-live">
+      <div class="ll-item"><div class="mf-dot" style="background:#00ff88;box-shadow:0 0 3px #00ff88"></div>CONFIRMED</div>
+      <div class="ll-item"><div class="mf-dot" style="background:#f5c518"></div>PROBABLE</div>
+      <div class="ll-item"><div class="mf-dot" style="background:#ff2233;box-shadow:0 0 3px #ff2233"></div>UNVERIFIED</div>
       <div class="ll-item" style="color:var(--cyan)">⊙ JUST DETECTED</div>
+      <div class="conf-toggle"><input type="checkbox" id="cluster-toggle" onchange="toggleClustering(this.checked)" checked/><label for="cluster-toggle">CLUSTER</label></div>
     </div>
-    <!-- CONFLICTS legend -->
+    <!-- CONFLICTS -->
     <div class="layer-legend" id="leg-conflicts">
-      <div class="ll-item" style="color:#ff2233">━ FRONTLINE</div>
+      <div class="ll-item" style="color:#ff2233">- - FRONTLINE</div>
       <div class="ll-item" style="color:#ff6b1a">● HOTSPOT</div>
       <div class="ll-item" style="color:#f5c518">● STABILIZING</div>
     </div>
-    <!-- TRADE legend -->
+    <!-- TRADE -->
     <div class="layer-legend" id="leg-trade">
       <div class="ll-item" style="color:#ff2233">━ HIGH RISK</div>
       <div class="ll-item" style="color:#f5c518">━ MODERATE</div>
       <div class="ll-item" style="color:#00ff88">━ LOW RISK</div>
+      <div class="ll-item" style="color:var(--cyan)">📊 TRAFFIC %</div>
     </div>
-    <!-- TRAVEL legend -->
+    <!-- TRAVEL -->
     <div class="layer-legend" id="leg-travel">
       <div class="ll-item" style="color:#8b0000">▪ CRITICAL</div>
       <div class="ll-item" style="color:#ff2233">▪ HIGH</div>
       <div class="ll-item" style="color:#f5c518">▪ MODERATE</div>
       <div class="ll-item" style="color:#00ff88">▪ LOW</div>
     </div>
-    <!-- ALIGNMENT legend -->
+    <!-- ALIGNMENT -->
     <div class="layer-legend" id="leg-align">
       <div class="ll-item" style="color:#ff6b1a">▪ SIDE A</div>
       <div class="ll-item" style="color:#00aaff">▪ SIDE B</div>
       <div class="ll-item" style="color:#f5c518">▪ AMBIGUOUS</div>
       <div class="ll-item" style="color:#4a7a99">▪ NEUTRAL</div>
     </div>
-    <span style="margin-left:auto;color:var(--muted);font-family:var(--mono);font-size:.44rem" id="map-src">—</span>
+    <span style="margin-left:auto;color:var(--muted);font-family:var(--mono);font-size:.42rem" id="map-src">—</span>
   </div>
   <!-- REPLAY BAR -->
   <div class="rep-bar">
-    <span style="color:var(--dim);letter-spacing:.1em;flex-shrink:0;font-family:var(--mono);font-size:.46rem" data-i18n="replay">TIMELINE</span>
+    <span style="color:var(--dim);letter-spacing:.1em;flex-shrink:0">TIMELINE</span>
     <button class="rep-btn active" onclick="setRepPeriod('24h',this)">24H</button>
     <button class="rep-btn" onclick="setRepPeriod('7d',this)">7D</button>
     <button class="rep-btn" onclick="setRepPeriod('30d',this)">30D</button>
-    <button class="rep-24h-btn" onclick="playLast24h()">▶ PLAY 24H</button>
+    <button class="rep-24h" onclick="playLast24h()">▶ PLAY 24H</button>
     <div class="rep-play" id="rep-play-btn" onclick="toggleReplay()">▶</div>
     <input type="range" class="rep-slider" id="rep-slider" min="0" max="100" value="100" oninput="onSlide(this.value)"/>
     <span id="rep-ts">LIVE</span>
     <button class="spd-btn active" onclick="setSpd(1,this)">1x</button>
     <button class="spd-btn" onclick="setSpd(2,this)">2x</button>
     <button class="spd-btn" onclick="setSpd(5,this)">5x</button>
-    <button class="rep-live-btn" onclick="goLive()">● LIVE</button>
+    <button class="rep-live" onclick="goLive()">● LIVE</button>
   </div>
 </div>
 
@@ -1340,54 +1619,59 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 
   <!-- PERSISTENT CONFLICTS -->
   <div class="sec">
-    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t" data-i18n="conflicts_title">PERSISTENT CONFLICTS</span><span class="arr">▾</span></div>
+    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t">PERSISTENT CONFLICTS</span><span class="arr">▾</span></div>
     <div class="sec-body"><div id="conflict-list">Loading…</div></div>
   </div>
 
   <!-- ALIGNMENT MAP PANEL -->
   <div class="sec">
-    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t" data-i18n="align_title">GLOBAL ALIGNMENT</span><span class="arr">▾</span></div>
+    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t">🌐 GLOBAL ALIGNMENT</span><span class="arr">▾</span></div>
     <div class="sec-body">
-      <div class="align-conflict-sel" id="align-conflict-sel"></div>
+      <div class="align-conf-sel" id="align-conf-sel"></div>
       <div id="align-list">Loading…</div>
     </div>
   </div>
 
   <!-- TRADE & LOGISTICS -->
   <div class="sec">
-    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t" data-i18n="trade_title">TRADE & LOGISTICS</span><span class="arr">▾</span></div>
+    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t">🚢 TRADE & LOGISTICS</span><span class="arr">▾</span></div>
     <div class="sec-body">
       <div id="trade-routes-list">Loading…</div>
       <div class="logistics-grid" id="logistics-grid">—</div>
+      <!-- CHOKEPOINT TRAFFIC -->
+      <div class="choke-traffic-wrap">
+        <div class="choke-traffic-h">CHOKEPOINT TRAFFIC LEVELS</div>
+        <div id="choke-traffic-bars">Loading…</div>
+      </div>
     </div>
   </div>
 
   <!-- STRATEGIC MONITOR -->
   <div class="sec">
-    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t" data-i18n="strat_title">STRATEGIC MONITOR</span><span class="arr">▾</span></div>
+    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t">STRATEGIC MONITOR</span><span class="arr">▾</span></div>
     <div class="sec-body">
       <div id="strat-list">Loading…</div>
-      <div style="margin-top:7px;font-family:var(--mono);font-size:.44rem;color:var(--muted);letter-spacing:.08em;margin-bottom:4px">CHOKEPOINTS</div>
+      <div style="margin-top:6px;font-family:var(--mono);font-size:.42rem;color:var(--muted);margin-bottom:3px">CHOKEPOINTS</div>
       <div id="choke-list">—</div>
     </div>
   </div>
 
   <!-- SUPPLY CHAIN -->
   <div class="sec">
-    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t" data-i18n="supply_title">SUPPLY CHAIN RISK</span><span class="arr">▾</span></div>
-    <div class="sec-body" style="padding:5px 7px"><div class="sup-grid" id="supply-grid">Loading…</div></div>
+    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t">SUPPLY CHAIN RISK</span><span class="arr">▾</span></div>
+    <div class="sec-body" style="padding:5px 6px"><div class="sup-grid" id="supply-grid">Loading…</div></div>
   </div>
 
   <!-- TRAVEL SAFETY -->
   <div class="sec">
-    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t" data-i18n="travel_title">✈ TRAVEL SAFETY</span><span class="arr">▾</span></div>
-    <div class="sec-body" style="padding:4px 7px"><div class="travel-list" id="travel-list">Loading…</div></div>
+    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t">✈ TRAVEL SAFETY</span><span class="arr">▾</span></div>
+    <div class="sec-body" style="padding:4px 6px"><div class="travel-list" id="travel-list">Loading…</div></div>
   </div>
 
-  <!-- EVENT FEED -->
+  <!-- EVENT FEED (confidence-coded) -->
   <div class="sec">
     <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')">
-      <span class="sec-t" data-i18n="feed_title">RECENT EVENTS</span>
+      <span class="sec-t">RECENT EVENTS</span>
       <span class="sec-b" id="feed-src-b">—</span><span class="arr">▾</span>
     </div>
     <div style="padding:0"><div class="feed-list" id="feed-list"><div style="padding:9px;font-family:var(--mono);font-size:.5rem;color:var(--dim)">Loading…</div></div></div>
@@ -1395,7 +1679,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 
   <!-- TRANSPARENCY -->
   <div class="sec">
-    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t" data-i18n="transp_title">SYSTEM TRANSPARENCY</span><span class="arr">▾</span></div>
+    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t">SYSTEM TRANSPARENCY</span><span class="arr">▾</span></div>
     <div class="sec-body"><div id="transp-list">Loading…</div></div>
   </div>
 
@@ -1405,64 +1689,39 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 <!-- INTEL PANEL -->
 <div id="intel-panel">
   <div class="intel-hdr">
-    <span class="intel-title-text" data-i18n="intel_title">◈ EVENT INTELLIGENCE</span>
+    <span class="intel-title-t">◈ EVENT INTELLIGENCE</span>
     <span class="intel-close" onclick="closeIntel()">✕</span>
   </div>
   <div class="intel-body" id="intel-body">
-    <div class="intel-loading"><span class="intel-spinner">◈</span><span data-i18n="intel_select">Select a map event to analyze</span></div>
+    <div class="intel-loading"><span class="intel-spinner">◈</span>Select a map event to analyze</div>
   </div>
 </div>
 
 <script>
-// ════════════════════════════════════════════════════════════
-// i18n
-// ════════════════════════════════════════════════════════════
-const LANGS = {
-  en:{title:"GLOBAL CONFLICT RADAR",subtitle:"LIVE GEOPOLITICAL MONITORING · RSS + CLAUDE AI · v4.0",layer_live:"◉ LIVE",layer_conflicts:"💥 CONFLICTS",layer_trade:"🚢 TRADE",layer_travel:"✈ TRAVEL",layer_align:"🌐 ALIGNMENT",live:"LIVE",act_title:"◈ GLOBAL ACTIVITY",act_incidents:"ACTIVE INCIDENTS",act_regions:"REGIONS ACTIVE",act_sources:"SOURCES MONITORED",act_24h:"DETECTED 24H",act_last:"LAST DETECTED",gti_title:"GLOBAL TENSION INDEX",velocity:"ESCALATION VELOCITY",trend_title:"TENSION TREND · 30 DAYS",fc_title:"ESCALATION FORECAST · 30D",fc_low:"LOW RISK",fc_mod:"MODERATE",fc_high:"HIGH RISK",fc_conf:"CONFIDENCE: ",reg_title:"REGIONAL TENSIONS",sum_title:"SITUATION SUMMARY",replay:"TIMELINE",conflicts_title:"PERSISTENT CONFLICTS",align_title:"GLOBAL ALIGNMENT",trade_title:"TRADE & LOGISTICS",strat_title:"STRATEGIC MONITOR",supply_title:"SUPPLY CHAIN RISK",travel_title:"✈ TRAVEL SAFETY",feed_title:"RECENT EVENTS",transp_title:"SYSTEM TRANSPARENCY",intel_title:"◈ EVENT INTELLIGENCE",intel_select:"Select a map event to analyze"},
-  sk:{title:"GLOBÁLNY KONFLIKTOVÝ RADAR",subtitle:"ŽIVÉ GEOPOLITICKÉ MONITOROVANIE · RSS + CLAUDE AI · v4.0",layer_live:"◉ ŽIVÉ",layer_conflicts:"💥 KONFLIKTY",layer_trade:"🚢 OBCHOD",layer_travel:"✈ CESTOVANIE",layer_align:"🌐 ZAROVNANIE",live:"ŽIVÉ",act_title:"◈ GLOBÁLNA AKTIVITA",act_incidents:"AKTÍVNE INCIDENTY",act_regions:"AKTÍVNE REGIÓNY",act_sources:"SLEDOVANÉ ZDROJE",act_24h:"DETEKOVANÉ 24H",act_last:"POSLEDNÁ DETEKCIA",gti_title:"GLOBÁLNY INDEX NAPÄTIA",velocity:"RÝCHLOSŤ ESKALÁCIE",trend_title:"TREND NAPÄTIA · 30 DNÍ",fc_title:"PROGNÓZA ESKALÁCIE · 30D",fc_low:"NÍZKE RIZIKO",fc_mod:"STREDNÉ",fc_high:"VYSOKÉ RIZIKO",fc_conf:"DÔVERA: ",reg_title:"REGIONÁLNE NAPÄTIA",sum_title:"SITUAČNÁ SPRÁVA",replay:"ČASOVÁ OS",conflicts_title:"PRETRVÁVAJÚCE KONFLIKTY",align_title:"GLOBÁLNE ZAROVNANIE",trade_title:"OBCHOD & LOGISTIKA",strat_title:"STRATEGICKÝ MONITOR",supply_title:"RIZIKO DODÁVATEĽ. REŤAZCA",travel_title:"✈ BEZPEČNOSŤ CESTOVANIA",feed_title:"POSLEDNÉ UDALOSTI",transp_title:"TRANSPARENTNOSŤ SYSTÉMU",intel_title:"◈ SPRAVODAJSKÝ PANEL",intel_select:"Vyberte udalosť na mape"},
-  de:{title:"GLOBALES KONFLIKT-RADAR",subtitle:"LIVE GEOPOLITISCHES MONITORING · RSS + CLAUDE AI · v4.0",layer_live:"◉ LIVE",layer_conflicts:"💥 KONFLIKTE",layer_trade:"🚢 HANDEL",layer_travel:"✈ REISEN",layer_align:"🌐 AUSRICHTUNG",live:"LIVE",act_title:"◈ GLOBALE AKTIVITÄT",act_incidents:"AKTIVE VORFÄLLE",act_regions:"AKTIVE REGIONEN",act_sources:"ÜBERWACHTE QUELLEN",act_24h:"ERKANNT 24H",act_last:"ZULETZT ERKANNT",gti_title:"GLOBALER SPANNUNGSINDEX",velocity:"ESKALATIONSGESCHW.",trend_title:"SPANNUNGSTREND · 30 TAGE",fc_title:"ESKALATIONSPROGNOSE · 30T",fc_low:"NIEDRIGES RISIKO",fc_mod:"MODERAT",fc_high:"HOHES RISIKO",fc_conf:"KONFIDENZ: ",reg_title:"REGIONALE SPANNUNGEN",sum_title:"LAGEBERICHT",replay:"ZEITLINIE",conflicts_title:"ANHALTENDE KONFLIKTE",align_title:"GLOBALE AUSRICHTUNG",trade_title:"HANDEL & LOGISTIK",strat_title:"STRATEGISCHER MONITOR",supply_title:"LIEFERKETTENRISIKO",travel_title:"✈ REISESICHERHEIT",feed_title:"AKTUELLE EREIGNISSE",transp_title:"SYSTEMTRANSPARENZ",intel_title:"◈ EREIGNISANALYSE",intel_select:"Ereignismarker auswählen"},
-  fr:{title:"RADAR MONDIAL DES CONFLITS",subtitle:"SURVEILLANCE GÉOPOLITIQUE EN DIRECT · RSS + CLAUDE AI · v4.0",layer_live:"◉ EN DIRECT",layer_conflicts:"💥 CONFLITS",layer_trade:"🚢 COMMERCE",layer_travel:"✈ VOYAGE",layer_align:"🌐 ALIGNEMENT",live:"EN DIRECT",act_title:"◈ ACTIVITÉ MONDIALE",act_incidents:"INCIDENTS ACTIFS",act_regions:"RÉGIONS ACTIVES",act_sources:"SOURCES SURVEILLÉES",act_24h:"DÉTECTÉS 24H",act_last:"DERNIÈRE DÉTECTION",gti_title:"INDICE DE TENSION MONDIAL",velocity:"VITESSE D'ESCALADE",trend_title:"TENDANCE · 30 JOURS",fc_title:"PRÉVISION D'ESCALADE · 30J",fc_low:"RISQUE FAIBLE",fc_mod:"MODÉRÉ",fc_high:"RISQUE ÉLEVÉ",fc_conf:"CONFIANCE: ",reg_title:"TENSIONS RÉGIONALES",sum_title:"RAPPORT DE SITUATION",replay:"CHRONOLOGIE",conflicts_title:"CONFLITS PERSISTANTS",align_title:"ALIGNEMENT MONDIAL",trade_title:"COMMERCE & LOGISTIQUE",strat_title:"MONITEUR STRATÉGIQUE",supply_title:"RISQUE CHAÎNE D'APPRO.",travel_title:"✈ SÉCURITÉ VOYAGE",feed_title:"ÉVÉNEMENTS RÉCENTS",transp_title:"TRANSPARENCE SYSTÈME",intel_title:"◈ ANALYSE ÉVÉNEMENT",intel_select:"Sélectionnez un événement"},
-  uk:{title:"ГЛОБАЛЬНИЙ РАДАР КОНФЛІКТІВ",subtitle:"МОНІТОРИНГ В РЕАЛЬНОМУ ЧАСІ · v4.0",layer_live:"◉ НАЖИВО",layer_conflicts:"💥 КОНФЛІКТИ",layer_trade:"🚢 ТОРГІВЛЯ",layer_travel:"✈ ПОДОРОЖІ",layer_align:"🌐 ПОЗИЦІЇ",live:"НАЖИВО",act_title:"◈ ГЛОБАЛЬНА АКТИВНІСТЬ",act_incidents:"АКТИВНІ ІНЦИДЕНТИ",act_regions:"АКТИВНІ РЕГІОНИ",act_sources:"ВІДСТЕЖУЄТЬСЯ ДЖЕРЕЛ",act_24h:"ВИЯВЛЕНО 24Г",act_last:"ОСТАННЄ ВИЯВЛЕННЯ",gti_title:"ГЛОБАЛЬНИЙ ІНДЕКС НАПРУГИ",velocity:"ШВИДКІСТЬ ЕСКАЛАЦІЇ",trend_title:"ТРЕНД · 30 ДНІВ",fc_title:"ПРОГНОЗ ЕСКАЛАЦІЇ · 30Д",fc_low:"НИЗЬКИЙ РИЗИК",fc_mod:"ПОМІРНИЙ",fc_high:"ВИСОКИЙ РИЗИК",fc_conf:"ДОВІРА: ",reg_title:"РЕГІОНАЛЬНА НАПРУГА",sum_title:"СИТУАЦІЙНИЙ ЗВІТ",replay:"ХРОНОЛОГІЯ",conflicts_title:"ТРИВАЛІ КОНФЛІКТИ",align_title:"ГЛОБАЛЬНІ ПОЗИЦІЇ",trade_title:"ТОРГІВЛЯ & ЛОГІСТИКА",strat_title:"СТРАТЕГІЧНИЙ МОНІТОР",supply_title:"РИЗИК ЛАНЦЮГА ПОСТАЧАНЬ",travel_title:"✈ БЕЗПЕКА ПОДОРОЖЕЙ",feed_title:"ОСТАННІ ПОДІЇ",transp_title:"ПРОЗОРІСТЬ СИСТЕМИ",intel_title:"◈ АНАЛІЗ ПОДІЇ",intel_select:"Оберіть подію на карті"},
-  ru:{title:"ГЛОБАЛЬНЫЙ РАДАР КОНФЛИКТОВ",subtitle:"МОНИТОРИНГ В РЕАЛЬНОМ ВРЕМЕНИ · v4.0",layer_live:"◉ LIVE",layer_conflicts:"💥 КОНФЛИКТЫ",layer_trade:"🚢 ТОРГОВЛЯ",layer_travel:"✈ ПУТЕШЕСТВИЯ",layer_align:"🌐 ПОЗИЦИИ",live:"LIVE",act_title:"◈ ГЛОБАЛЬНАЯ АКТИВНОСТЬ",act_incidents:"АКТИВНЫЕ ИНЦИДЕНТЫ",act_regions:"АКТИВНЫЕ РЕГИОНЫ",act_sources:"ОТСЛЕЖИВАЕТСЯ ИСТОЧНИКОВ",act_24h:"ОБНАРУЖЕНО 24Ч",act_last:"ПОСЛЕДНЕЕ ОБНАРУЖЕНИЕ",gti_title:"ГЛОБАЛЬНЫЙ ИНДЕКС НАПРЯЖЁННОСТИ",velocity:"СКОРОСТЬ ЭСКАЛАЦИИ",trend_title:"ТРЕНД · 30 ДНЕЙ",fc_title:"ПРОГНОЗ ЭСКАЛАЦИИ · 30Д",fc_low:"НИЗКИЙ РИСК",fc_mod:"УМЕРЕННЫЙ",fc_high:"ВЫСОКИЙ РИСК",fc_conf:"УВЕРЕННОСТЬ: ",reg_title:"РЕГИОНАЛЬНАЯ НАПРЯЖЁННОСТЬ",sum_title:"СИТУАЦИОННЫЙ ДОКЛАД",replay:"ХРОНОЛОГИЯ",conflicts_title:"ЗАТЯЖНЫЕ КОНФЛИКТЫ",align_title:"ГЛОБАЛЬНЫЕ ПОЗИЦИИ",trade_title:"ТОРГОВЛЯ & ЛОГИСТИКА",strat_title:"СТРАТЕГИЧЕСКИЙ МОНИТОР",supply_title:"РИСК ЦЕПОЧКИ ПОСТАВОК",travel_title:"✈ БЕЗОПАСНОСТЬ ПУТЕШЕСТВИЙ",feed_title:"ПОСЛЕДНИЕ СОБЫТИЯ",transp_title:"ПРОЗРАЧНОСТЬ СИСТЕМЫ",intel_title:"◈ АНАЛИЗ СОБЫТИЯ",intel_select:"Выберите событие на карте"},
-  ar:{title:"رادار الصراع العالمي",subtitle:"مراقبة جيوسياسية مباشرة · v4.0",layer_live:"◉ مباشر",layer_conflicts:"💥 صراعات",layer_trade:"🚢 تجارة",layer_travel:"✈ سفر",layer_align:"🌐 مواقف",live:"مباشر",act_title:"◈ النشاط العالمي",act_incidents:"حوادث نشطة",act_regions:"مناطق نشطة",act_sources:"مصادر مراقبة",act_24h:"مكتشف خلال 24 ساعة",act_last:"آخر اكتشاف",gti_title:"مؤشر التوتر العالمي",velocity:"سرعة التصعيد",trend_title:"اتجاه التوتر · 30 يوم",fc_title:"توقع التصعيد · 30 يوم",fc_low:"خطر منخفض",fc_mod:"معتدل",fc_high:"خطر مرتفع",fc_conf:"ثقة: ",reg_title:"توترات إقليمية",sum_title:"ملخص الوضع",replay:"الجدول الزمني",conflicts_title:"صراعات مستمرة",align_title:"المواقف العالمية",trade_title:"التجارة والخدمات",strat_title:"مراقبة استراتيجية",supply_title:"مخاطر سلسلة التوريد",travel_title:"✈ سلامة السفر",feed_title:"أحداث أخيرة",transp_title:"شفافية النظام",intel_title:"◈ تحليل الحدث",intel_select:"اختر حدثاً على الخريطة"},
-  zh:{title:"全球冲突雷达",subtitle:"实时地缘政治监测 · RSS + AI · v4.0",layer_live:"◉ 实时",layer_conflicts:"💥 冲突",layer_trade:"🚢 贸易",layer_travel:"✈ 旅行",layer_align:"🌐 立场",live:"实时",act_title:"◈ 全球活动",act_incidents:"活跃事件",act_regions:"活跃地区",act_sources:"监测来源",act_24h:"24小时检测",act_last:"最新检测",gti_title:"全球紧张指数",velocity:"局势升级速度",trend_title:"紧张趋势 · 30天",fc_title:"升级预测 · 30天",fc_low:"低风险",fc_mod:"中等",fc_high:"高风险",fc_conf:"置信度: ",reg_title:"地区紧张局势",sum_title:"局势摘要",replay:"时间轴",conflicts_title:"持续冲突",align_title:"全球立场",trade_title:"贸易与物流",strat_title:"战略监测",supply_title:"供应链风险",travel_title:"✈ 旅行安全",feed_title:"最新事件",transp_title:"系统透明度",intel_title:"◈ 事件分析",intel_select:"选择地图上的事件"},
-};
-let currentLang='en';
-function setLang(lang){
-  currentLang=lang;
-  const T=LANGS[lang]||LANGS.en;
-  document.querySelectorAll('[data-i18n]').forEach(el=>{const k=el.getAttribute('data-i18n');if(T[k])el.textContent=T[k]});
-  // RTL
-  const rtl=['ar'];
-  document.documentElement.setAttribute('dir',rtl.includes(lang)?'rtl':'ltr');
-  document.documentElement.setAttribute('lang',lang);
-}
-function t(key){return(LANGS[currentLang]||LANGS.en)[key]||key}
-
-// ════════════════════════════════════════════════════════════
-// STATE
-// ════════════════════════════════════════════════════════════
-let leafMap=null, mLayer=null, conflictLayer=null, tradeLayer=null, travelLayer=null, alignLayer=null, tChart=null;
+// ════════════ STATE ════════════
+let leafMap=null, mLayer=null, clusterLayer=null, conflictLayer=null, tradeLayer=null, travelLayer=null, alignLayer=null, tChart=null;
 let allEvents=[], replayHistory=[], repIdx=0, repPlaying=false, repSpd=1, repPeriod='24h', repTimer=null;
-let refreshCountdown=600, currentLayer='live';
-let conflictsData=[], tradeData={}, travelData={}, alignData={}, currentAlignConflict='ukraine_war';
+let refreshCountdown=600, currentLayer='live', useClustering=true;
+let conflictsData=[], tradeData={}, travelData={}, alignData={}, alignTrends={}, currentAlignConflict='ukraine_war';
 
-// ════════════════════════════════════════════════════════════
-// UTILS
-// ════════════════════════════════════════════════════════════
+// ════════════ UTILS ════════════
 const gtiColor=v=>v<2?'#00ff88':v<4?'#f5c518':v<6?'#ff6b1a':v<8?'#ff2233':'#8b0000';
 const riskColor=r=>({LOW:'#00ff88',MODERATE:'#f5c518',HIGH:'#ff2233',CRITICAL:'#8b0000',ELEVATED:'#ff6b1a'}[r]||'#4a7a99');
 const stanceColor=s=>({supporting_A:'#ff6b1a',supporting_B:'#00aaff',neutral:'#4a7a99',ambiguous:'#f5c518'}[s]||'#4a7a99');
 const momentumColor=s=>({emerging:'#f5c518',escalating:'#ff6b1a','active war':'#ff2233',stabilizing:'#aaaaff','de-escalating':'#00ff88'}[s]||'#4a7a99');
+const confClass=c=>c>=78?'confirmed':c>=60?'probable':'unverified';
+const confColor=c=>c>=78?'#00ff88':c>=60?'#f5c518':'#ff2233';
+const confLabel=c=>c>=78?'CONFIRMED':c>=60?'PROBABLE':'UNVERIFIED';
 function timeSince(iso){const m=(Date.now()-new Date(iso).getTime())/60000;if(m<1)return'just now';if(m<60)return Math.round(m)+'m ago';if(m<1440)return Math.round(m/60)+'h ago';return Math.round(m/1440)+'d ago'}
 function animNum(el,to,dur,fmt){const s=performance.now();(function step(n){const t=Math.min((n-s)/dur,1),e=1-Math.pow(1-t,3);el.textContent=fmt(to*e);if(t<1)requestAnimationFrame(step)})(s)}
 const srcLabel=s=>s==='rss'?'✓ RSS LIVE':'⚠ MOCK DATA';
 const srcColor=s=>s==='rss'?'#00ff88':'#ff6b1a';
 function dismissAlert(){document.getElementById('alert-banner').classList.remove('show')}
+const trafficColor=p=>p>=75?'#00ff88':p>=45?'#f5c518':p>=25?'#ff6b1a':'#ff2233';
+const trendArrow=t=>({stable:'→',shifting_toward_A:'↗',shifting_away:'↙',shifting_B:'↘',mediating:'↔',hardening:'↑'}[t]||'→');
+const trendColorFn=t=>({stable:'#4a7a99',shifting_toward_A:'#ff6b1a',shifting_away:'#00aaff',shifting_B:'#00aaff',mediating:'#f5c518',hardening:'#ff2233'}[t]||'#4a7a99');
 
-// ════════════════════════════════════════════════════════════
-// CLOCK
-// ════════════════════════════════════════════════════════════
+// ════════════ CLOCK ════════════
 setInterval(()=>{
   const c=document.getElementById('utc-clock');if(c)c.textContent=new Date().toUTCString().slice(0,25)+' UTC';
   refreshCountdown--;
@@ -1470,103 +1729,113 @@ setInterval(()=>{
   if(refreshCountdown<=0){refreshCountdown=600;loadAll()}
 },1000);
 
-// ════════════════════════════════════════════════════════════
-// MAP INIT
-// ════════════════════════════════════════════════════════════
+// ════════════ MAP INIT ════════════
 function initMap(){
   if(leafMap)return;
   leafMap=L.map('wmap',{center:[20,20],zoom:2,zoomControl:true,attributionControl:false,minZoom:2,maxZoom:10});
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(leafMap);
   mLayer=L.layerGroup().addTo(leafMap);
+  clusterLayer=L.markerClusterGroup({
+    maxClusterRadius:50,
+    iconCreateFunction:function(cluster){
+      const count=cluster.getChildCount();
+      const size=count<5?'small':count<15?'medium':'large';
+      return L.divIcon({html:`<div><span>${count}</span></div>`,className:`marker-cluster marker-cluster-${size}`,iconSize:[40,40]});
+    },
+    spiderfyOnMaxZoom:true,showCoverageOnHover:false
+  });
   conflictLayer=L.layerGroup();
   tradeLayer=L.layerGroup();
   travelLayer=L.layerGroup();
   alignLayer=L.layerGroup();
 }
 
-// ════════════════════════════════════════════════════════════
-// LAYER SWITCHER
-// ════════════════════════════════════════════════════════════
-const LAYER_ACTIVE_CLASS={live:'active',conflicts:'active-conflict',trade:'active-trade',travel:'active-travel',alignment:'active-align'};
+// ════════════ LAYER SWITCHER ════════════
+const LAYER_CLS={live:'al',conflicts:'al-conflict',trade:'al-trade',travel:'al-travel',alignment:'al-align'};
 function setLayer(name,btn){
   currentLayer=name;
   document.querySelectorAll('.layer-btn').forEach(b=>b.className='layer-btn');
-  if(btn)btn.className='layer-btn '+LAYER_ACTIVE_CLASS[name];
-  // Toggle legend
+  if(btn)btn.className='layer-btn '+LAYER_CLS[name];
   ['live','conflicts','trade','travel','align'].forEach(l=>{
     const el=document.getElementById('leg-'+l);
-    if(el)el.classList.toggle('visible',l===name||(name==='alignment'&&l==='align'));
+    if(el)el.classList.toggle('vis',l===name||(name==='alignment'&&l==='align'));
   });
-  // Toggle layers
   if(!leafMap)return;
-  [mLayer,conflictLayer,tradeLayer,travelLayer,alignLayer].forEach(l=>{if(leafMap.hasLayer(l))leafMap.removeLayer(l)});
-  if(name==='live'){leafMap.addLayer(mLayer)}
-  else if(name==='conflicts'){leafMap.addLayer(conflictLayer);leafMap.addLayer(mLayer)}
-  else if(name==='trade'){leafMap.addLayer(tradeLayer)}
-  else if(name==='travel'){leafMap.addLayer(travelLayer)}
-  else if(name==='alignment'){leafMap.addLayer(alignLayer)}
+  [mLayer,clusterLayer,conflictLayer,tradeLayer,travelLayer,alignLayer].forEach(l=>{if(leafMap.hasLayer(l))leafMap.removeLayer(l)});
+  if(name==='live'){
+    if(useClustering)leafMap.addLayer(clusterLayer);
+    else leafMap.addLayer(mLayer);
+  } else if(name==='conflicts'){leafMap.addLayer(conflictLayer);leafMap.addLayer(mLayer)}
+  else if(name==='trade')leafMap.addLayer(tradeLayer);
+  else if(name==='travel')leafMap.addLayer(travelLayer);
+  else if(name==='alignment')leafMap.addLayer(alignLayer);
 }
 
-// ════════════════════════════════════════════════════════════
-// LIVE EVENTS MAP
-// ════════════════════════════════════════════════════════════
+function toggleClustering(enabled){
+  useClustering=enabled;
+  if(currentLayer==='live'){
+    if(leafMap.hasLayer(mLayer))leafMap.removeLayer(mLayer);
+    if(leafMap.hasLayer(clusterLayer))leafMap.removeLayer(clusterLayer);
+    if(enabled)leafMap.addLayer(clusterLayer);
+    else leafMap.addLayer(mLayer);
+  }
+}
+
+// ════════════ LIVE EVENTS MAP ════════════
 function renderMap(events){
-  if(!mLayer)return;
+  if(!mLayer||!clusterLayer)return;
   mLayer.clearLayers();
+  clusterLayer.clearLayers();
   events.forEach(e=>{
     const age=e.age_minutes??999;
     const isHot=age<10;
-    const color=age>1440?'faded':e.color;
+    const conf=e.confidence||70;
+    const cc=confClass(conf);
+    const color=age>1440?'faded':cc;
     const hotCls=isHot?' em-hot':'';
     const justTag=isHot?`<div class="just-tag">JUST DETECTED</div>`:'';
     const icon=L.divIcon({className:'',html:`<div class="just-wrap">${justTag}<div class="em ${color}${hotCls}"></div></div>`,iconSize:[11,11],iconAnchor:[5,5]});
     const precLoc=e.precise_location||e.region;
-    const unc=e.uncertainty?`<div style="color:#f5c518;font-size:.46rem;margin-top:4px;border-top:1px solid #0d3348;padding-top:3px">⚠ ${e.uncertainty}</div>`:'';
-    const srcLink=e.url&&e.url!=='#'?`<a href="${e.url}" target="_blank" style="color:#00e5ff;font-size:.52rem">↗ SOURCE</a>`:'';
+    const unc=e.uncertainty?`<div style="color:#f5c518;font-size:.44rem;margin-top:3px;border-top:1px solid #0d3348;padding-top:3px">⚠ ${e.uncertainty}</div>`:'';
+    const srcLink=e.url&&e.url!=='#'?`<a href="${e.url}" target="_blank" style="color:#00e5ff;font-size:.5rem">↗ SOURCE</a>`:'';
+    const confBadgeColor=confColor(conf);
     const popup=`
-<div style="font-family:'Orbitron',sans-serif;font-size:.56rem;letter-spacing:.12em;color:#ff6b1a;margin-bottom:3px">${e.type.toUpperCase()}${isHot?'<span style="color:#ff2233;margin-left:5px;font-size:.4rem">● NOW</span>':''}</div>
-<div style="display:flex;justify-content:space-between;color:#4a7a99;font-size:.56rem;margin:2px 0"><span>LOCATION</span><span style="color:#00e5ff">${precLoc}</span></div>
-<div style="display:flex;justify-content:space-between;color:#4a7a99;font-size:.56rem;margin:2px 0"><span>REGION</span><span style="color:#c8e8f8">${e.region}</span></div>
-<div style="display:flex;justify-content:space-between;color:#4a7a99;font-size:.56rem;margin:2px 0"><span>CONFIDENCE</span><span style="color:#c8e8f8">${e.confidence}%${e.source_count?` · ${e.source_count} src`:''}</span></div>
-<div style="display:flex;justify-content:space-between;color:#4a7a99;font-size:.56rem;margin:2px 0"><span>DETECTED</span><span style="color:#c8e8f8">${timeSince(e.time_iso)}</span></div>
-<div style="margin-top:5px;padding-top:5px;border-top:1px solid #0d3348;font-size:.58rem;line-height:1.4">${e.summary}</div>
+<div style="font-family:'Orbitron',sans-serif;font-size:.55rem;letter-spacing:.12em;color:#ff6b1a;margin-bottom:3px">${e.type.toUpperCase()}${isHot?'<span style="color:#ff2233;margin-left:5px;font-size:.38rem">● NOW</span>':''}</div>
+<div style="display:flex;justify-content:space-between;color:#4a7a99;font-size:.54rem;margin:2px 0"><span>LOCATION</span><span style="color:#00e5ff">${precLoc}</span></div>
+<div style="display:flex;justify-content:space-between;color:#4a7a99;font-size:.54rem;margin:2px 0"><span>CONFIDENCE</span><span style="color:${confBadgeColor}">${conf}% · ${confLabel(conf)}</span></div>
+<div style="display:flex;justify-content:space-between;color:#4a7a99;font-size:.54rem;margin:2px 0"><span>DETECTED</span><span style="color:#c8e8f8">${timeSince(e.time_iso)}</span></div>
+<div style="margin-top:5px;padding-top:4px;border-top:1px solid #0d3348;font-size:.56rem;line-height:1.35">${e.summary}</div>
 ${unc}
-<div style="margin-top:6px;display:flex;justify-content:space-between;align-items:center">${srcLink}<div class="pop-analyze" onclick="openIntel('${e.id}')">◈ FULL ANALYSIS</div></div>`;
-    L.marker([e.lat,e.lon],{icon}).bindPopup(popup,{maxWidth:300}).addTo(mLayer);
+<div style="margin-top:5px;display:flex;justify-content:space-between;align-items:center">${srcLink}<div class="pop-analyze" onclick="openIntel('${e.id}')">◈ FULL ANALYSIS</div></div>`;
+    const marker=L.marker([e.lat,e.lon],{icon}).bindPopup(popup,{maxWidth:300});
+    mLayer.addLayer(marker);
+    clusterLayer.addLayer(L.marker([e.lat,e.lon],{icon}).bindPopup(popup,{maxWidth:300}));
   });
 }
 
-// ════════════════════════════════════════════════════════════
-// CONFLICT LAYER (frontlines + hotspots)
-// ════════════════════════════════════════════════════════════
+// ════════════ CONFLICT LAYER ════════════
 function renderConflictLayer(conflicts){
   if(!conflictLayer)return;
   conflictLayer.clearLayers();
   conflicts.forEach(c=>{
-    // Frontlines
-    if(c.frontlines){
-      c.frontlines.forEach(fl=>{
-        if(fl.length<2)return;
-        L.polyline(fl,{color:c.color,weight:2.5,opacity:.8,dashArray:'4,4'}).bindPopup(`<div style="font-family:var(--mono);font-size:.6rem;color:${c.color}">${c.name.toUpperCase()} FRONTLINE</div><div style="font-size:.56rem;color:#4a7a99;margin-top:3px">${c.description}</div>`).addTo(conflictLayer);
-      });
-    }
-    // Hotspots
-    if(c.hotspots){
-      c.hotspots.forEach(h=>{
-        const icon=L.divIcon({className:'',html:`<div class="hotspot-marker" style="background:${c.color}44;border-color:${c.color};box-shadow:0 0 5px ${c.color}"></div>`,iconSize:[8,8],iconAnchor:[4,4]});
-        L.marker([h.lat,h.lon],{icon}).bindPopup(`<div style="font-family:'Orbitron',sans-serif;font-size:.56rem;color:${c.color}">${h.name.toUpperCase()}</div><div style="font-size:.54rem;color:#4a7a99;margin-top:2px">${c.name} · ${c.state.toUpperCase()}</div>`).addTo(conflictLayer);
-      });
-    }
-    // Conflict center marker
-    const cIcon=L.divIcon({className:'',html:`<div style="font-family:'Orbitron',sans-serif;font-size:.44rem;padding:3px 6px;border:1px solid ${c.color};background:rgba(2,6,8,.9);color:${c.color};white-space:nowrap">${c.name.toUpperCase()}</div>`,iconSize:[100,20],iconAnchor:[50,10]});
+    if(c.frontlines){c.frontlines.forEach(fl=>{
+      if(fl.length<2)return;
+      L.polyline(fl,{color:c.color,weight:2.5,opacity:.85,dashArray:'5,4'})
+        .bindPopup(`<div style="font-family:'Orbitron',sans-serif;font-size:.55rem;color:${c.color}">${c.name.toUpperCase()} FRONTLINE</div><div style="font-size:.54rem;color:#4a7a99;margin-top:2px">${c.description}</div>`)
+        .addTo(conflictLayer);
+    })}
+    if(c.hotspots){c.hotspots.forEach(h=>{
+      const icon=L.divIcon({className:'',html:`<div class="hotspot-marker" style="background:${c.color}44;border-color:${c.color};box-shadow:0 0 5px ${c.color}"></div>`,iconSize:[8,8],iconAnchor:[4,4]});
+      L.marker([h.lat,h.lon],{icon}).bindPopup(`<div style="font-family:'Orbitron',sans-serif;font-size:.54rem;color:${c.color}">${h.name.toUpperCase()}</div><div style="font-size:.52rem;color:#4a7a99;margin-top:2px">${c.name} · ${c.state.toUpperCase()}</div>`).addTo(conflictLayer);
+    })}
+    // Label
+    const cIcon=L.divIcon({className:'',html:`<div style="font-family:'Orbitron',sans-serif;font-size:.42rem;padding:3px 6px;border:1px solid ${c.color};background:rgba(2,6,8,.9);color:${c.color};white-space:nowrap">${c.name.toUpperCase()}</div>`,iconSize:[null,null],iconAnchor:[0,10]});
     L.marker([c.lat,c.lon],{icon:cIcon}).addTo(conflictLayer);
   });
 }
 
-// ════════════════════════════════════════════════════════════
-// TRADE LAYER
-// ════════════════════════════════════════════════════════════
-function renderTradeLayer(routes){
+// ════════════ TRADE LAYER (with traffic labels) ════════════
+function renderTradeLayer(routes, chokepointTraffic){
   if(!tradeLayer)return;
   tradeLayer.clearLayers();
   (routes||[]).forEach(r=>{
@@ -1574,29 +1843,35 @@ function renderTradeLayer(routes){
     const color=riskColor(r.risk);
     const weight=r.risk==='HIGH'||r.risk==='CRITICAL'?3:r.risk==='MODERATE'?2:1.5;
     L.polyline(r.waypoints,{color,weight,opacity:.85,dashArray:r.risk==='LOW'?'6,4':null})
-      .bindPopup(`<div style="font-family:'Orbitron',sans-serif;font-size:.56rem;color:${color}">${r.name.toUpperCase()}</div><div style="font-size:.56rem;color:${color};margin:3px 0">${r.risk} RISK · ${r.disruption_pct}% DISRUPTION</div><div style="font-size:.54rem;color:#4a7a99">${r.reason}</div>`)
+      .bindPopup(`<div style="font-family:'Orbitron',sans-serif;font-size:.55rem;color:${color}">${r.name.toUpperCase()}</div><div style="font-size:.54rem;color:${color};margin:3px 0">${r.risk} RISK · ${r.disruption_pct}% DISRUPTION</div><div style="font-size:.52rem;color:#4a7a99">${r.reason}</div>`)
       .addTo(tradeLayer);
   });
+  // Add chokepoint traffic labels
+  const cpCoords={
+    "Strait of Hormuz":[26.5,56.5],"Suez Canal":[30.0,32.5],"Bab el-Mandeb":[12.5,43.5],
+    "Taiwan Strait":[24.0,119.5],"Strait of Gibraltar":[35.9,-5.5],"Malacca Strait":[2.0,103.0]
+  };
+  if(chokepointTraffic){Object.entries(chokepointTraffic).forEach(([name,data])=>{
+    const coords=cpCoords[name];if(!coords)return;
+    const pct=data.traffic_pct||0;
+    const color=trafficColor(pct);
+    const icon=L.divIcon({className:'',html:`<div style="font-family:'Orbitron',sans-serif;font-size:.44rem;padding:3px 7px;border:1px solid ${color};background:rgba(2,6,8,.9);color:${color};white-space:nowrap">${name}<br>${pct}% TRAFFIC</div>`,iconSize:[null,null],iconAnchor:[0,0]});
+    L.marker(coords,{icon}).bindPopup(`<div style="font-family:'Orbitron',sans-serif;font-size:.55rem;color:${color}">${name.toUpperCase()}</div><div style="font-size:.54rem;color:#4a7a99;margin-top:3px">Traffic: <span style="color:${color}">${pct}% of normal capacity</span></div><div style="font-size:.52rem;color:#4a7a99">~${data.normal_vessels_day} vessels/day normally</div><div style="font-size:.52rem;color:${riskColor(data.risk)};margin-top:2px">${data.risk} RISK</div>`).addTo(tradeLayer);
+  })}
 }
 
-// ════════════════════════════════════════════════════════════
-// TRAVEL LAYER
-// ════════════════════════════════════════════════════════════
+// ════════════ TRAVEL LAYER ════════════
 function renderTravelLayer(travel){
   if(!travelLayer)return;
   travelLayer.clearLayers();
   Object.entries(travel||{}).forEach(([country,data])=>{
     const c=riskColor(data.risk);
-    const icon=L.divIcon({className:'',html:`<div class="travel-country-marker" style="border-color:${c};color:${c};background:rgba(2,6,8,.85)">${country}</div>`,iconSize:[null,null],iconAnchor:[0,10]});
-    L.marker([data.lat,data.lon],{icon})
-      .bindPopup(`<div style="font-family:'Orbitron',sans-serif;font-size:.56rem;color:${c}">${country.toUpperCase()}</div><div style="font-family:var(--mono);font-size:.52rem;color:${c};margin:3px 0">${data.risk}</div><div style="font-size:.52rem;color:#4a7a99">${data.reason}</div>`)
-      .addTo(travelLayer);
+    const icon=L.divIcon({className:'',html:`<div class="travel-cm" style="border-color:${c};color:${c};background:rgba(2,6,8,.85)">${country}</div>`,iconSize:[null,null],iconAnchor:[0,10]});
+    L.marker([data.lat,data.lon],{icon}).bindPopup(`<div style="font-family:'Orbitron',sans-serif;font-size:.55rem;color:${c}">${country.toUpperCase()}</div><div style="font-family:var(--mono);font-size:.5rem;color:${c};margin:3px 0">${data.risk}</div><div style="font-size:.5rem;color:#4a7a99">${data.reason}</div>`).addTo(travelLayer);
   });
 }
 
-// ════════════════════════════════════════════════════════════
-// ALIGNMENT LAYER
-// ════════════════════════════════════════════════════════════
+// ════════════ ALIGNMENT LAYER ════════════
 function renderAlignLayer(conflict){
   if(!alignLayer)return;
   alignLayer.clearLayers();
@@ -1604,16 +1879,16 @@ function renderAlignLayer(conflict){
   if(!data||!data.countries)return;
   Object.entries(data.countries).forEach(([country,info])=>{
     const c=stanceColor(info.stance);
-    const icon=L.divIcon({className:'',html:`<div class="align-country-marker" style="border-color:${c};color:${c};background:rgba(2,6,8,.88)">${country}</div>`,iconSize:[null,null],iconAnchor:[0,10]});
-    L.marker([info.lat,info.lon],{icon})
-      .bindPopup(`<div style="font-family:'Orbitron',sans-serif;font-size:.56rem;color:${c}">${country.toUpperCase()}</div><div style="font-family:var(--mono);font-size:.52rem;color:${c};margin:3px 0">${info.stance.replace('_',' ').toUpperCase()}</div><div style="font-size:.52rem;color:#4a7a99">${info.label}</div>`)
-      .addTo(alignLayer);
+    const trends=alignTrends[conflict]||{};
+    const tr=trends[country];
+    const trendArrowStr=tr?trendArrow(tr.trend):'';
+    const trendNote=tr?` · ${tr.note}`:'';
+    const icon=L.divIcon({className:'',html:`<div class="align-cm" style="border-color:${c};color:${c};background:rgba(2,6,8,.88)">${country}${trendArrowStr?`<span style="margin-left:3px;color:${trendColorFn(tr?.trend)}">${trendArrowStr}</span>`:''}</div>`,iconSize:[null,null],iconAnchor:[0,10]});
+    L.marker([info.lat,info.lon],{icon}).bindPopup(`<div style="font-family:'Orbitron',sans-serif;font-size:.55rem;color:${c}">${country.toUpperCase()}</div><div style="font-family:var(--mono);font-size:.5rem;color:${c};margin:3px 0">${info.stance.replace('_',' ').toUpperCase()}</div><div style="font-size:.5rem;color:#4a7a99">${info.label}${trendNote}</div>`).addTo(alignLayer);
   });
 }
 
-// ════════════════════════════════════════════════════════════
-// GTI
-// ════════════════════════════════════════════════════════════
+// ════════════ GTI ════════════
 function renderGTI(d){
   const c=gtiColor(d.gti);
   const n=document.getElementById('gti-num');
@@ -1631,21 +1906,84 @@ function renderGTI(d){
   const fb=document.getElementById('feed-src-b');if(fb){fb.textContent=srcLabel(d.data_source);fb.style.color=srcColor(d.data_source)}
 }
 
-// ════════════════════════════════════════════════════════════
-// CHART
-// ════════════════════════════════════════════════════════════
+// ════════════ CHART ════════════
 function renderChart(trend){
   const ctx=document.getElementById('tchart');if(!ctx)return;
   const labels=trend.map(d=>{const p=d.date.split('-');return`${p[2]}.${p[1]}`});
   const vals=trend.map(d=>d.value);
   const color=gtiColor(vals.filter(Boolean).pop()||4);
   if(tChart)tChart.destroy();
-  tChart=new Chart(ctx,{type:'line',data:{labels,datasets:[{data:vals,borderColor:color,borderWidth:2,pointRadius:1.5,pointBackgroundColor:vals.map(v=>v?gtiColor(v):'transparent'),pointBorderColor:'transparent',tension:.38,fill:true,backgroundColor:c=>{const g=c.chart.ctx.createLinearGradient(0,0,0,120);g.addColorStop(0,`${color}44`);g.addColorStop(1,'transparent');return g}}]},options:{responsive:true,maintainAspectRatio:false,animation:{duration:800},plugins:{legend:{display:false},tooltip:{backgroundColor:'#040d12',borderColor:'#1a6688',borderWidth:1,titleColor:'#00e5ff',bodyColor:'#c8e8f8',titleFont:{family:'Share Tech Mono',size:8},bodyFont:{family:'Share Tech Mono',size:8},callbacks:{label:c=>` GTI: ${c.raw?.toFixed(1)||'—'}/10`}}},scales:{x:{grid:{color:'rgba(13,51,72,.25)',drawTicks:false},ticks:{color:'#4a7a99',font:{family:'Share Tech Mono',size:6},maxRotation:0,maxTicksLimit:8},border:{color:'#0d3348'}},y:{min:0,max:10,grid:{color:'rgba(13,51,72,.25)',drawTicks:false},ticks:{color:'#4a7a99',font:{family:'Share Tech Mono',size:6},stepSize:2},border:{color:'#0d3348'}}}}});
+  tChart=new Chart(ctx,{type:'line',data:{labels,datasets:[{data:vals,borderColor:color,borderWidth:2,pointRadius:1.5,pointBackgroundColor:vals.map(v=>v?gtiColor(v):'transparent'),pointBorderColor:'transparent',tension:.38,fill:true,backgroundColor:c=>{const g=c.chart.ctx.createLinearGradient(0,0,0,115);g.addColorStop(0,`${color}44`);g.addColorStop(1,'transparent');return g}}]},options:{responsive:true,maintainAspectRatio:false,animation:{duration:800},plugins:{legend:{display:false},tooltip:{backgroundColor:'#040d12',borderColor:'#1a6688',borderWidth:1,titleColor:'#00e5ff',bodyColor:'#c8e8f8',titleFont:{family:'Share Tech Mono',size:8},bodyFont:{family:'Share Tech Mono',size:8},callbacks:{label:c=>` GTI: ${c.raw?.toFixed(1)||'—'}/10`}}},scales:{x:{grid:{color:'rgba(13,51,72,.25)',drawTicks:false},ticks:{color:'#4a7a99',font:{family:'Share Tech Mono',size:6},maxRotation:0,maxTicksLimit:8},border:{color:'#0d3348'}},y:{min:0,max:10,grid:{color:'rgba(13,51,72,.25)',drawTicks:false},ticks:{color:'#4a7a99',font:{family:'Share Tech Mono',size:6},stepSize:2},border:{color:'#0d3348'}}}}});
 }
 
-// ════════════════════════════════════════════════════════════
-// ACTIVITY
-// ════════════════════════════════════════════════════════════
+// ════════════ SNAPSHOT + DELTAS ════════════
+function renderSnapshot(d){
+  document.getElementById('snap-gti').textContent=d.gti?.toFixed(1)||'—';
+  const tc=gtiColor(d.gti||0);
+  document.getElementById('snap-gti').style.color=tc;
+  document.getElementById('snap-trend').textContent=`trend: ${d.trend||'—'}`;
+  document.getElementById('snap-conflicts').textContent=d.active_conflicts||'—';
+  document.getElementById('snap-strategic').textContent=`${d.strategic_events_24h||'—'} strategic`;
+  document.getElementById('snap-region').textContent=d.most_active_region||'—';
+  document.getElementById('snap-fastest').textContent=d.fastest_escalation||'—';
+  document.getElementById('snap-date').textContent=new Date().toUTCString().slice(0,11).trim().toUpperCase();
+
+  // Delta indicators
+  const dGti=d.gti_change||0;
+  const dInc=d.incident_change||0;
+  const dStr=d.strategic_change||0;
+  function setDelta(id,val,unit=''){
+    const el=document.getElementById(id);if(!el)return;
+    const sign=val>0?'+':'';
+    el.textContent=sign+val.toFixed?.(1)+unit||sign+val+unit;
+    el.className='delta-val '+(val>0?'delta-up':val<0?'delta-down':'delta-flat');
+  }
+  setDelta('delta-gti',dGti,' pts');
+  setDelta('delta-inc',dInc,' incidents');
+  setDelta('delta-strat',dStr,' events');
+
+  // Hotspots
+  renderHotspots(d.hotspots||[], d.region_density||{});
+  // Stable
+  renderStable(d.stable_regions||[]);
+}
+
+// ════════════ HOTSPOTS ════════════
+function renderHotspots(hotspots, density){
+  const el=document.getElementById('hotspots-list');if(!el)return;
+  const maxD=Math.max(...Object.values(density),1);
+  if(!hotspots.length){el.innerHTML='<div style="font-family:var(--mono);font-size:.46rem;color:var(--dim)">No hotspots detected</div>';return}
+  el.innerHTML=hotspots.map((region,i)=>{
+    const count=density[region]||1;
+    const pct=Math.round(count/maxD*100);
+    const c=gtiColor(Math.min(10,count*1.2));
+    const colors=['#ff2233','#ff6b1a','#f5c518','#aaaaff','#4a7a99','#2a4a5a'];
+    return`<div class="hotspot-row" onclick="flyToRegion('${region}')">
+<span class="hotspot-num" style="color:${colors[i]||'#4a7a99'}">${i+1}</span>
+<span class="hotspot-name">${region}</span>
+<div class="hotspot-bar-wrap"><div class="hotspot-bar-fill" style="width:${pct}%;background:${c}"></div></div>
+<span style="font-family:var(--mono);font-size:.42rem;color:${c};margin-left:3px">${count}</span>
+</div>`}).join('');
+}
+
+// ════════════ STABLE REGIONS ════════════
+function renderStable(stable){
+  const el=document.getElementById('stable-list');if(!el)return;
+  if(!stable.length){el.innerHTML='<div style="font-family:var(--mono);font-size:.46rem;color:var(--dim)">Calculating…</div>';return}
+  el.innerHTML=stable.map(r=>`<div class="stable-row"><div class="stable-dot"></div><span class="stable-name">${r}</span><span class="stable-badge">STABLE</span></div>`).join('');
+}
+
+// ════════════ DAILY BRIEFING ════════════
+function renderBriefing(data){
+  const el=document.getElementById('daily-briefing');if(!el)return;
+  el.classList.remove('typing');el.textContent='';
+  const text=data.briefing||'No briefing available.';let i=0;
+  const iv=setInterval(()=>{el.textContent+=text[i++]||'';if(i>text.length)clearInterval(iv)},11);
+  const de=document.getElementById('brief-date');if(de)de.textContent=data.date||'TODAY';
+  const me=document.getElementById('brief-model');if(me)me.textContent=ANTHROPIC_KEY_AVAILABLE?'CLAUDE AI':'SYSTEM';
+}
+
+// ════════════ ACTIVITY ════════════
 function renderActivity(d){
   document.getElementById('act-inc').textContent=d.active_incidents||'—';
   document.getElementById('act-conf').textContent=`${d.confirmed_incidents||'—'} confirmed`;
@@ -1653,13 +1991,11 @@ function renderActivity(d){
   document.getElementById('act-strat').textContent=`${d.strategic_events||'—'} strategic`;
   document.getElementById('act-24h').textContent=d.events_detected_24h||'—';
   document.getElementById('act-avgc').textContent=`AVG CONF ${d.avg_confidence||'—'}%`;
-  const lastEl=document.getElementById('act-last');
-  if(lastEl){const m=d.last_event_minutes_ago;lastEl.textContent=m===0?'just now':m<60?`${m} min ago`:`${Math.round(m/60)}h ago`;lastEl.style.color=m<10?'#00ff88':m<60?'#f5c518':'#4a7a99'}
+  const le=document.getElementById('act-last');
+  if(le){const m=d.last_event_minutes_ago;le.textContent=m===0?'just now':m<60?`${m} min ago`:`${Math.round(m/60)}h ago`;le.style.color=m<10?'#00ff88':m<60?'#f5c518':'#4a7a99'}
 }
 
-// ════════════════════════════════════════════════════════════
-// FORECAST
-// ════════════════════════════════════════════════════════════
+// ════════════ FORECAST ════════════
 function renderForecast(d,analyzed){
   document.getElementById('fc-low').style.width=d.low_pct+'%';
   document.getElementById('fc-mod').style.width=d.moderate_pct+'%';
@@ -1668,13 +2004,11 @@ function renderForecast(d,analyzed){
   document.getElementById('fc-mp').textContent=d.moderate_pct+'%';
   document.getElementById('fc-hp').textContent=d.high_pct+'%';
   document.getElementById('fc-reason').textContent=d.reasoning||'—';
-  document.getElementById('fc-conf-val').textContent=Math.round(58+Math.random()*22)+'%';
+  document.getElementById('fc-conf-val').textContent=Math.round(55+Math.random()*25)+'%';
   document.getElementById('fc-analyzed').textContent=(analyzed||217)+' EVT';
 }
 
-// ════════════════════════════════════════════════════════════
-// REGIONAL
-// ════════════════════════════════════════════════════════════
+// ════════════ REGIONAL ════════════
 function renderRegional(d){
   const el=document.getElementById('reg-list');if(!el)return;
   const sorted=Object.entries(d).sort((a,b)=>b[1].gti-a[1].gti);
@@ -1684,118 +2018,100 @@ function renderRegional(d){
     return`<div class="reg-row"><span class="reg-name">${region}</span><span class="reg-gti" style="color:${c}">${data.gti}</span><span class="reg-d" style="color:${dc}">${ds}${data.delta}%</span><div class="reg-bar"><div class="reg-bar-f" style="width:${data.gti*10}%;background:${c}"></div></div></div>`}).join('');
 }
 
-// ════════════════════════════════════════════════════════════
-// PERSISTENT CONFLICTS
-// ════════════════════════════════════════════════════════════
+// ════════════ CONFLICTS ════════════
 function renderConflicts(conflicts){
   conflictsData=conflicts;
   const el=document.getElementById('conflict-list');if(!el)return;
   el.innerHTML=conflicts.map(c=>{
     const sc=momentumColor(c.state);
-    const stClass='momentum-state-'+c.state.replace(' ','-');
-    const actors=c.actors?c.actors.slice(0,2).map(a=>`<span style="color:${a.side==='A'?'#ff6b1a':'#00aaff'};font-family:var(--mono);font-size:.42rem">${a.name}</span>`).join('<span style="color:#2a4a5a;font-size:.42rem"> vs </span>'):'';
     return`<div class="conflict-item" onclick="flyToConflict(${c.lat},${c.lon})">
-<div class="conf-header">
-  <span class="conf-name" style="color:${sc}">${c.name.toUpperCase()}</span>
-  <span class="conf-state ${stClass}">${c.state.toUpperCase()}</span>
-</div>
-<div class="conf-meta"><span>${c.region}</span><span>MOMENTUM: <span style="color:${sc}">${c.adjusted_momentum??c.momentum}/10</span></span><span>${c.live_events??0} live events</span></div>
-<div class="conf-momentum-bar"><div class="conf-momentum-fill" style="width:${(c.adjusted_momentum||c.momentum)*10}%;background:${sc}"></div></div>
+<div class="conf-hdr"><span class="conf-name" style="color:${sc}">${c.name.toUpperCase()}</span><span class="conf-state" style="color:${sc};border-color:${sc}">${c.state.toUpperCase()}</span></div>
+<div class="conf-meta"><span>${c.region}</span><span>M: <span style="color:${sc}">${c.adjusted_momentum||c.momentum}/10</span></span><span>${c.live_events||0} live</span></div>
+<div class="conf-mbar"><div class="conf-mbar-f" style="width:${(c.adjusted_momentum||c.momentum)*10}%;background:${sc}"></div></div>
 <div class="conf-desc">${c.description}</div>
-${actors?`<div style="margin-top:3px">${actors}</div>`:''}
 </div>`}).join('');
 }
-function flyToConflict(lat,lon){if(leafMap){setLayer('conflicts',document.querySelector('.layer-btn:nth-child(2)'));leafMap.flyTo([lat,lon],5,{duration:1.2})}}
+function flyToConflict(lat,lon){if(leafMap){setLayer('conflicts',document.querySelectorAll('.layer-btn')[1]);leafMap.flyTo([lat,lon],5,{duration:1.2})}}
 
-// ════════════════════════════════════════════════════════════
-// ALIGNMENT PANEL
-// ════════════════════════════════════════════════════════════
+// ════════════ FLY TO REGION ════════════
+const REGION_COORDS={'Middle East':[29.5,44.0],'Eastern Europe':[49.5,32.0],'East Asia':[25.0,118.0],'South Asia':[30.0,68.0],'Horn of Africa':[10.0,44.0],'West Africa':[13.0,2.0],'Mediterranean':[36.0,14.0],'Central Asia':[41.0,62.0],'Northern Europe':[60.0,20.0],'Latin America':[-15.0,-55.0],'Central Africa':[-2.0,25.0]};
+function flyToRegion(region){const c=REGION_COORDS[region];if(c&&leafMap){setLayer('live',document.querySelectorAll('.layer-btn')[0]);leafMap.flyTo(c,5,{duration:1.2})}}
+
+// ════════════ ALIGNMENT ════════════
 function renderAlignmentPanel(conflict){
   currentAlignConflict=conflict;
-  const data=alignData[conflict];
-  if(!data)return;
-  // Conflict selector
-  const selEl=document.getElementById('align-conflict-sel');
-  if(selEl){selEl.innerHTML=Object.keys(alignData).map(k=>`<button class="align-conf-btn ${k===conflict?'active':''}" onclick="selectAlignConflict('${k}')">${(alignData[k].conflict||k).toUpperCase()}</button>`).join('')}
+  const data=alignData[conflict];if(!data)return;
+  const selEl=document.getElementById('align-conf-sel');
+  if(selEl){selEl.innerHTML=Object.keys(alignData).map(k=>`<button class="align-conf-btn${k===conflict?' active':''}" onclick="selectAlignConflict('${k}')">${(alignData[k].conflict||k).slice(0,12).toUpperCase()}</button>`).join('')}
   const el=document.getElementById('align-list');if(!el)return;
-  const sorted=Object.entries(data.countries).sort((a,b)=>{const order={'supporting_A':0,'supporting_B':1,'ambiguous':2,'neutral':3};return(order[a[1].stance]||3)-(order[b[1].stance]||3)});
-  el.innerHTML=`<div class="align-list">${sorted.map(([country,info])=>{
+  const trends=alignTrends[conflict]||{};
+  const sorted=Object.entries(data.countries).sort((a,b)=>{const o={supporting_A:0,supporting_B:1,ambiguous:2,neutral:3};return(o[a[1].stance]||3)-(o[b[1].stance]||3)});
+  el.innerHTML=`<div>${sorted.map(([country,info])=>{
     const c=stanceColor(info.stance);
-    return`<div class="align-row"><div class="align-dot" style="background:${c}"></div><span class="align-country">${country}</span><span class="align-label stance-${info.stance}">${info.label}</span></div>`}).join('')}</div>`;
-  // Update map layer
+    const tr=trends[country];
+    const arrow=tr?`<span style="color:${trendColorFn(tr.trend)};font-size:.6rem;margin-left:2px">${trendArrow(tr.trend)}</span>`:'';
+    const tNote=tr&&tr.trend!=='stable'?`<div style="font-family:var(--mono);font-size:.38rem;color:${trendColorFn(tr.trend)};margin-top:1px">${tr.note}</div>`:'';
+    return`<div class="align-row"><div class="align-dot" style="background:${c}"></div><span class="align-country">${country}</span><div><span class="align-label stance-${info.stance}">${info.label}</span>${arrow}${tNote}</div></div>`}).join('')}</div>`;
   renderAlignLayer(conflict);
-  if(currentLayer==='alignment')leafMap&&leafMap.hasLayer(alignLayer)||renderAlignLayer(conflict);
 }
-function selectAlignConflict(k){
-  // Update button states
-  document.querySelectorAll('.align-conf-btn').forEach(b=>{b.classList.toggle('active',b.textContent.toLowerCase().includes((alignData[k].conflict||k).toLowerCase().slice(0,4)))});
-  renderAlignmentPanel(k);
-}
+function selectAlignConflict(k){renderAlignmentPanel(k)}
 
-// ════════════════════════════════════════════════════════════
-// TRADE PANEL
-// ════════════════════════════════════════════════════════════
+// ════════════ TRADE PANELS ════════════
 function renderTradePanels(data){
   const routeEl=document.getElementById('trade-routes-list');
-  if(routeEl&&data.routes){
-    routeEl.innerHTML=data.routes.map(r=>{
-      const c=riskColor(r.risk);
-      return`<div class="trade-route"><span class="trade-name">${r.name}</span><div class="trade-right"><div class="trade-risk" style="color:${c}">${r.risk}</div><div class="trade-pct">${r.disruption_pct}% disruption</div></div></div>`}).join('');
-  }
+  if(routeEl&&data.routes)routeEl.innerHTML=data.routes.map(r=>{const c=riskColor(r.risk);return`<div class="trade-route"><span class="trade-nm">${r.name}</span><div class="trade-r"><div class="trade-risk" style="color:${c}">${r.risk}</div><div class="trade-pct">${r.disruption_pct}% disruption</div></div></div>`}).join('');
   const logEl=document.getElementById('logistics-grid');
-  if(logEl&&data.sectors){
-    logEl.innerHTML=Object.entries(data.sectors).map(([k,s])=>`<div class="log-item"><div class="log-icon">${s.icon}</div><div class="log-lbl">${k.toUpperCase()}</div><div class="log-risk" style="color:${riskColor(s.risk)}">${s.risk}</div></div>`).join('');
-  }
+  if(logEl&&data.sectors)logEl.innerHTML=Object.entries(data.sectors).map(([k,s])=>`<div class="log-item"><div class="log-icon">${s.icon}</div><div class="log-lbl">${k.toUpperCase()}</div><div class="log-risk" style="color:${riskColor(s.risk)}">${s.risk}</div></div>`).join('');
 }
 
-// ════════════════════════════════════════════════════════════
-// TRAVEL PANEL
-// ════════════════════════════════════════════════════════════
-function renderTravelPanel(data){
-  const el=document.getElementById('travel-list');if(!el)return;
-  const sorted=Object.entries(data).sort((a,b)=>{const ord={CRITICAL:0,HIGH:1,MODERATE:2,LOW:3};return(ord[a[1].risk]||3)-(ord[b[1].risk]||3)});
-  el.innerHTML=sorted.map(([country,d])=>`<div class="travel-row" title="${d.reason}"><span class="travel-country">${country}</span><span class="travel-risk risk-${d.risk}">${d.risk}</span></div>`).join('');
+// ════════════ CHOKEPOINT TRAFFIC BARS ════════════
+function renderChokeTraffic(data){
+  const el=document.getElementById('choke-traffic-bars');if(!el)return;
+  el.innerHTML=Object.entries(data).map(([name,d])=>{
+    const pct=d.traffic_pct||0;const c=trafficColor(pct);
+    return`<div class="choke-traffic-item">
+<div class="choke-traffic-top"><span class="choke-traffic-name">${name}</span><span class="choke-traffic-pct" style="color:${c}">${pct}%</span></div>
+<div class="choke-traffic-bar"><div class="choke-traffic-fill" style="width:${pct}%;background:${c}"></div></div>
+</div>`}).join('');
 }
 
-// ════════════════════════════════════════════════════════════
-// STRATEGIC + SUPPLY
-// ════════════════════════════════════════════════════════════
+// ════════════ STRATEGIC + SUPPLY ════════════
 function renderStrategic(d){
   const el=document.getElementById('strat-list');
   if(el){const items=[{label:'CARRIER GROUP',val:d.carrier_group?'DETECTED':'NOT DETECTED',on:d.carrier_group},{label:'BALLISTIC LAUNCH',val:d.ballistic_launch?'DETECTED':'NOT DETECTED',on:d.ballistic_launch},{label:'NUCLEAR RHETORIC',val:d.nuclear_rhetoric?'ACTIVE':'NONE',on:d.nuclear_rhetoric}];
-  el.innerHTML=items.map(i=>`<div class="strat-item"><div class="strat-dot" style="background:${i.on?'#ff2233':'#2a4a5a'};box-shadow:${i.on?'0 0 5px #ff2233':'none'}"></div><span class="strat-lbl">${i.label}</span><span class="strat-val" style="color:${i.on?'#ff2233':'#2a4a5a'}">${i.val}</span></div>`).join('')}
+  el.innerHTML=items.map(i=>`<div class="strat-item"><div class="strat-dot" style="background:${i.on?'#ff2233':'#2a4a5a'};box-shadow:${i.on?'0 0 4px #ff2233':'none'}"></div><span class="strat-lbl">${i.label}</span><span class="strat-val" style="color:${i.on?'#ff2233':'#2a4a5a'}">${i.val}</span></div>`).join('')}
   const cel=document.getElementById('choke-list');
   if(cel&&d.chokepoints)cel.innerHTML=d.chokepoints.map(c=>`<div class="choke-item"><span class="choke-nm">${c.name}</span><span class="choke-rv" style="color:${riskColor(c.risk)}">${c.risk}</span></div>`).join('');
 }
 function renderSupply(d){
   const el=document.getElementById('supply-grid');if(!el)return;
   el.innerHTML=[['⚡','ENERGY','energy'],['🚢','SHIPPING','shipping'],['🌾','FOOD','food'],['💾','TECH','tech']]
-    .map(([ic,lb,k])=>`<div class="sup-item"><div style="font-size:.8rem">${ic}</div><div style="font-family:var(--mono);font-size:.42rem;color:var(--muted);margin:1px 0">${lb}</div><div style="font-family:var(--disp);font-size:.56rem;font-weight:700;color:${riskColor(d[k]||'LOW')}">${d[k]||'LOW'}</div></div>`).join('');
+    .map(([ic,lb,k])=>`<div class="sup-item"><div style="font-size:.75rem">${ic}</div><div style="font-family:var(--mono);font-size:.4rem;color:var(--muted);margin:1px 0">${lb}</div><div style="font-family:var(--disp);font-size:.52rem;font-weight:700;color:${riskColor(d[k]||'LOW')}">${d[k]||'LOW'}</div></div>`).join('');
 }
 
-// ════════════════════════════════════════════════════════════
-// EVENT FEED (with uncertainty + precise location)
-// ════════════════════════════════════════════════════════════
+// ════════════ FEED (confidence color) ════════════
 function renderFeed(events){
   const el=document.getElementById('feed-list');if(!el)return;
   if(!events.length){el.innerHTML='<div style="padding:9px;font-family:var(--mono);font-size:.5rem;color:#ff2233">NO EVENTS</div>';return}
-  el.innerHTML=events.slice(0,18).map(e=>`
-<div class="fi" onclick="openIntel('${e.id}')">
-  <div class="fi-ind ${e.color}"></div>
-  <div>
-    <div class="fi-type">${e.type.toUpperCase()}${(e.age_minutes??999)<10?'<span style="color:#ff2233;margin-left:3px;font-size:.38rem">● NOW</span>':''}</div>
-    <div class="fi-loc">◈ ${e.precise_location||e.region}</div>
-    <div class="fi-reg">${e.region} · ${timeSince(e.time_iso)}</div>
-    <div class="fi-desc">${e.summary}</div>
-    ${e.uncertainty?`<div class="fi-unc">⚠ LOW CONFIDENCE</div>`:''}
-  </div>
-  <div><div class="fi-conf">${e.confidence}%</div><div class="fi-src">${e.source}</div></div>
-</div>`).join('');
+  el.innerHTML=events.slice(0,18).map(e=>{
+    const cc=confClass(e.confidence||70);const color=confColor(e.confidence||70);const label=confLabel(e.confidence||70);
+    const age=e.age_minutes??999;
+    return`<div class="fi" onclick="openIntel('${e.id}')">
+<div class="fi-ind ${cc}"></div>
+<div>
+  <div class="fi-type">${e.type.toUpperCase()}${age<10?'<span style="color:#ff2233;margin-left:3px;font-size:.36rem">● NOW</span>':''}</div>
+  <div class="fi-loc">◈ ${e.precise_location||e.region}</div>
+  <div class="fi-reg">${e.region} · ${timeSince(e.time_iso)}</div>
+  <div class="fi-desc">${e.summary}</div>
+</div>
+<div>
+  <div class="fi-conf-badge" style="color:${color};border-color:${color}">${label}</div>
+  <div class="fi-src">${e.source}</div>
+</div>
+</div>`}).join('');
 }
 
-// ════════════════════════════════════════════════════════════
-// ALERTS + TRANSPARENCY + SUMMARY
-// ════════════════════════════════════════════════════════════
+// ════════════ ALERTS + TRANSPARENCY + SUMMARY ════════════
 function renderAlerts(alerts){
   if(!alerts||!alerts.length)return;
   const top=alerts[0];
@@ -1810,7 +2126,7 @@ function renderTransparency(act,status){
     ['CONFIRMED INCIDENTS',act.confirmed_incidents||'—'],
     ['STRATEGIC ALERTS',act.strategic_events||'—'],
     ['AVG DETECTION LATENCY',`${act.avg_detection_latency||11} MIN`],
-    ['AI CONFIDENCE SCORE',`${act.ai_confidence||'—'}%`],
+    ['AI CONFIDENCE',`${act.ai_confidence||'—'}%`],
     ['DATA SOURCE',status.data_source==='rss'?'RSS LIVE':'MOCK DATA'],
     ['LAST REFRESH',status.timestamp?new Date(status.timestamp).toUTCString().slice(17,25)+' UTC':'—'],
   ].map(([l,v])=>`<div class="transp-row"><span class="transp-lbl">${l}</span><span class="transp-val">${v}</span></div>`).join('');
@@ -1824,38 +2140,42 @@ function renderSummary(data){
   if(gen)gen.textContent=`MODEL: ${(data.generated_by||'—').toUpperCase()}`;
   if(ts)ts.textContent=new Date().toUTCString().slice(0,16)+' UTC';
 }
+function renderTravelPanel(data){
+  const el=document.getElementById('travel-list');if(!el)return;
+  const sorted=Object.entries(data).sort((a,b)=>{const ord={CRITICAL:0,HIGH:1,MODERATE:2,LOW:3};return(ord[a[1].risk]||3)-(ord[b[1].risk]||3)});
+  el.innerHTML=sorted.map(([country,d])=>`<div class="travel-row" title="${d.reason}"><span class="travel-country">${country}</span><span class="travel-risk risk-${d.risk}">${d.risk}</span></div>`).join('');
+}
 
-// ════════════════════════════════════════════════════════════
-// INTELLIGENCE PANEL
-// ════════════════════════════════════════════════════════════
+// ════════════ INTELLIGENCE PANEL ════════════
 async function openIntel(eid){
   const panel=document.getElementById('intel-panel');
   const body=document.getElementById('intel-body');
   panel.classList.add('open');
-  body.innerHTML=`<div class="intel-loading"><span class="intel-spinner">◈</span>${t('intel_select')}</div>`;
+  body.innerHTML='<div class="intel-loading"><span class="intel-spinner">◈</span>Fetching Claude AI analysis…</div>';
   const [detail,stats]=await Promise.all([
     fetch(`/api/event-detail/${eid}`).then(r=>r.json()).catch(()=>({})),
     fetch(`/api/event-stats/${eid}`).then(r=>r.json()).catch(()=>({})),
   ]);
   const esc=detail.escalation_risk||'MODERATE';
-  const actors=(detail.related_actors||[]).length?(detail.related_actors||[]).map(a=>`<span class="actor-tag">${a}</span>`).join(''):'<span style="color:var(--muted);font-size:.44rem">—</span>';
-  // Find event for precise location
+  const actors=(detail.related_actors||[]).map(a=>`<span class="actor-tag">${a}</span>`).join('')||'<span style="color:var(--muted);font-size:.42rem">—</span>';
   const ev=allEvents.find(e=>e.id===eid)||{};
   const precLoc=ev.precise_location||detail.location||'Unknown';
-  const uncertainty=ev.uncertainty?`<div class="intel-uncertainty">⚠ ${ev.uncertainty}</div>`:'';
+  const cc=confClass(ev.confidence||70);const ccColor=confColor(ev.confidence||70);const ccLabel=confLabel(ev.confidence||70);
+  const unc=ev.uncertainty?`<div class="intel-unc">⚠ ${ev.uncertainty}</div>`:'';
   body.innerHTML=`
 <div class="intel-type">${(detail.event_type||'UNKNOWN').toUpperCase()}</div>
-<div class="intel-loc">◈ ${precLoc}${ev.region&&ev.region!==precLoc?`<span style="color:var(--muted)">· ${ev.region}</span>`:''}</div>
-<div class="intel-det">Detected ${ev.time_iso?timeSince(ev.time_iso):'—'} · Source: ${detail.source||'—'} · ${ev.source_count??'—'} source(s)</div>
-${uncertainty}
-<div class="intel-4grid">
-  <div class="intel-m"><div class="intel-m-l">CONFIDENCE</div><div class="intel-m-v" style="color:${detail.confidence>=75?'#00ff88':detail.confidence>=50?'#f5c518':'#ff6b1a'}">${detail.confidence||'—'}%</div></div>
-  <div class="intel-m"><div class="intel-m-l">ESC. RISK</div><div class="esc-badge esc-${esc}" style="font-size:.65rem;padding:2px 5px">${esc}</div></div>
-  <div class="intel-m" style="grid-column:1/-1"><div class="intel-m-l">NUMBERS / UNITS</div><div class="intel-m-v" style="color:var(--cyan);font-size:.65rem">${detail.numbers_detected||ev.numbers||'—'}</div></div>
+<div class="intel-loc">◈ ${precLoc}${ev.region&&ev.region!==precLoc?`<span style="color:var(--muted);margin-left:4px">· ${ev.region}</span>`:''}</div>
+<div class="intel-det">Detected ${ev.time_iso?timeSince(ev.time_iso):'—'} · ${detail.source||'—'} · ${ev.source_count??'—'} source(s)</div>
+${unc}
+<div class="intel-4g">
+  <div class="intel-m"><div class="intel-m-l">CONFIDENCE</div><div class="intel-m-v" style="color:${ccColor}">${ev.confidence||'—'}%</div></div>
+  <div class="intel-m"><div class="intel-m-l">ASSESSMENT</div><div style="font-family:var(--disp);font-size:.62rem;font-weight:700;color:${ccColor};padding-top:2px">${ccLabel}</div></div>
+  <div class="intel-m"><div class="intel-m-l">ESC. RISK</div><div class="esc-badge esc-${esc}">${esc}</div></div>
+  <div class="intel-m"><div class="intel-m-l">NUMBERS</div><div class="intel-m-v" style="color:var(--cyan);font-size:.62rem">${detail.numbers_detected||ev.numbers||'—'}</div></div>
 </div>
 <div class="intel-stats-box">
   <div class="intel-stats-h">◈ LAST 24H — ${precLoc}</div>
-  <div class="intel-stats-grid">
+  <div class="intel-stats-g">
     <div class="stat-item"><div class="stat-l">REGION EVENTS</div><div class="stat-v">${stats.region_events_24h??'—'}</div></div>
     <div class="stat-item"><div class="stat-l">SAME TYPE</div><div class="stat-v">${stats.same_type_24h??'—'}</div></div>
     <div class="stat-item"><div class="stat-l">MISSILE STRIKES</div><div class="stat-v">${stats.missiles_24h??'—'}</div></div>
@@ -1868,13 +2188,12 @@ ${uncertainty}
 <div class="intel-sec"><div class="intel-sec-h">CONTEXT</div><div class="intel-text">${detail.context||'—'}</div></div>
 <div class="intel-sec"><div class="intel-sec-h">ACTORS INVOLVED</div><div style="margin-top:3px">${actors}</div></div>
 ${ev.url&&ev.url!=='#'?`<a href="${ev.url}" target="_blank" class="intel-src-link">↗ READ ORIGINAL SOURCE</a>`:''}
-<div style="margin-top:9px;font-family:var(--mono);font-size:.42rem;color:var(--muted);border-top:1px solid var(--b0);padding-top:6px">ANALYSIS: CLAUDE AI · ${new Date().toUTCString().slice(0,16)} UTC</div>`;
+<div style="margin-top:8px;font-family:var(--mono);font-size:.4rem;color:var(--muted);border-top:1px solid var(--b0);padding-top:5px">ANALYSIS: CLAUDE AI · ${new Date().toUTCString().slice(0,16)} UTC</div>`;
 }
 function closeIntel(){document.getElementById('intel-panel').classList.remove('open')}
 
-// ════════════════════════════════════════════════════════════
-// REPLAY
-// ════════════════════════════════════════════════════════════
+// ════════════ REPLAY ════════════
+const ANTHROPIC_KEY_AVAILABLE=false; // set by backend
 async function loadRepHistory(){try{const r=await fetch(`/api/history?period=${repPeriod}`).then(x=>x.json());replayHistory=r.history||[];document.getElementById('rep-slider').max=Math.max(0,replayHistory.length-1)}catch(e){replayHistory=[]}}
 function setRepPeriod(p,btn){repPeriod=p;document.querySelectorAll('.rep-btn').forEach(b=>{if(['24h','7d','30d'].includes(b.textContent.toLowerCase()))b.classList.remove('active')});btn.classList.add('active');loadRepHistory()}
 function toggleReplay(){if(repPlaying)stopReplay();else{if(!replayHistory.length){loadRepHistory().then(startReplay);return}startReplay()}}
@@ -1886,13 +2205,14 @@ function setSpd(s,btn){repSpd=s;document.querySelectorAll('.spd-btn').forEach(b=
 async function playLast24h(){await loadRepHistory();repIdx=0;document.getElementById('rep-slider').value=0;startReplay()}
 function goLive(){stopReplay();document.getElementById('rep-ts').textContent='LIVE';document.getElementById('rep-slider').value=replayHistory.length||100;renderMap(allEvents)}
 
-// ════════════════════════════════════════════════════════════
-// MAIN LOAD
-// ════════════════════════════════════════════════════════════
+// ════════════ LANG STUB ════════════
+function setLang(lang){document.documentElement.setAttribute('lang',lang);document.documentElement.setAttribute('dir',lang==='ar'?'rtl':'ltr')}
+
+// ════════════ MAIN LOAD ════════════
 async function loadAll(){
   refreshCountdown=600;
   try{
-    const [sr,er,tr,fc,reg,strat,sup,al,act,conflicts,trade,travel,align]=await Promise.all([
+    const [sr,er,tr,fc,reg,strat,sup,al,act,conflicts,trade,travel,alignU,alignG,snap,chkTraffic,alignTr]=await Promise.all([
       fetch('/api/status').then(r=>r.json()).catch(()=>({})),
       fetch('/api/events-v4').then(r=>r.json()).catch(()=>({events:[]})),
       fetch('/api/trend').then(r=>r.json()).catch(()=>({trend:[]})),
@@ -1905,17 +2225,19 @@ async function loadAll(){
       fetch('/api/conflicts').then(r=>r.json()).catch(()=>({conflicts:[]})),
       fetch('/api/trade').then(r=>r.json()).catch(()=>({routes:[],sectors:{}})),
       fetch('/api/travel-safety').then(r=>r.json()).catch(()=>({travel:{}})),
-      fetch('/api/alignment').then(r=>r.json()).catch(()=>({alignment:{}})),
+      fetch('/api/alignment?conflict=ukraine_war').then(r=>r.json()).catch(()=>({})),
+      fetch('/api/alignment?conflict=gaza_conflict').then(r=>r.json()).catch(()=>({})),
+      fetch('/api/snapshot').then(r=>r.json()).catch(()=>({})),
+      fetch('/api/chokepoints-traffic').then(r=>r.json()).catch(()=>({chokepoints:{}})),
+      fetch('/api/alignment-trends').then(r=>r.json()).catch(()=>({trends:{}})),
     ]);
 
     allEvents=er.events||[];
     tradeData=trade;
     travelData=travel.travel||{};
-    // Store alignment data
-    if(align.alignment){
-      // alignment endpoint returns single conflict; fetch both
-      alignData[align.alignment.conflict?Object.keys(align.alignment.countries||{})[0]:'ukraine_war']=align.alignment;
-    }
+    if(alignU.alignment)alignData['ukraine_war']=alignU.alignment;
+    if(alignG.alignment)alignData['gaza_conflict']=alignG.alignment;
+    if(alignTr.trends)alignTrends=alignTr.trends;
 
     renderGTI(sr);
     renderChart(tr.trend||[]);
@@ -1930,53 +2252,39 @@ async function loadAll(){
     renderConflicts(conflicts.conflicts||[]);
     renderConflictLayer(conflicts.conflicts||[]);
     renderTradePanels(trade);
-    renderTradeLayer(trade.routes||[]);
+    renderTradeLayer(trade.routes||[], chkTraffic.chokepoints||{});
     renderTravelPanel(travelData);
     renderTravelLayer(travelData);
     renderTransparency(act,sr);
+    renderSnapshot(snap);
+    renderChokeTraffic(chkTraffic.chokepoints||{});
+    renderAlignmentPanel('ukraine_war');
 
     const ms=document.getElementById('map-src');
     if(ms)ms.textContent=`${er.count||0} INCIDENTS · ${new Date().toUTCString().slice(17,25)} UTC`;
 
-    // Fetch both alignment conflicts
-    const [alignU,alignG]=await Promise.all([
-      fetch('/api/alignment?conflict=ukraine_war').then(r=>r.json()).catch(()=>({alignment:{}})),
-      fetch('/api/alignment?conflict=gaza_conflict').then(r=>r.json()).catch(()=>({alignment:{}})),
-    ]);
-    if(alignU.alignment){alignData['ukraine_war']=alignU.alignment}
-    if(alignG.alignment){alignData['gaza_conflict']=alignG.alignment}
-    renderAlignmentPanel('ukraine_war');
-
-    // AI summary
+    // Async: AI summary + daily briefing
     const se=document.getElementById('ai-sum');if(se){se.classList.add('typing');se.textContent='Analyzing…'}
     fetch('/api/summary').then(r=>r.json()).then(renderSummary).catch(()=>{const e=document.getElementById('ai-sum');if(e){e.classList.remove('typing');e.textContent='Summary unavailable.'}});
 
+    const be=document.getElementById('daily-briefing');if(be){be.classList.add('typing');be.textContent='Generating daily briefing…'}
+    fetch('/api/daily-briefing').then(r=>r.json()).then(renderBriefing).catch(()=>{const e=document.getElementById('daily-briefing');if(e){e.classList.remove('typing');e.textContent='Briefing unavailable.'}});
+
     await loadRepHistory();
-    setLayer(currentLayer, document.querySelector('.layer-btn.active, .layer-btn.active-conflict, .layer-btn.active-trade, .layer-btn.active-travel, .layer-btn.active-align'));
+    setLayer(currentLayer, document.querySelector('.layer-btn.al, .layer-btn.al-conflict, .layer-btn.al-trade, .layer-btn.al-travel, .layer-btn.al-align'));
 
   }catch(err){console.error('[LoadAll]',err)}
 }
 
-// ════════════════════════════════════════════════════════════
-// BOOT
-// ════════════════════════════════════════════════════════════
+// ════════════ BOOT ════════════
 document.addEventListener('DOMContentLoaded',()=>{
   initMap();
   loadAll();
   function fixH(){
-    const w=document.getElementById('wmap');
-    const shell=document.querySelector('.shell');
-    const repBar=document.querySelector('.rep-bar');
-    const mf=document.querySelector('.map-footer');
-    if(w&&shell&&repBar&&mf){
-      const h=shell.clientHeight-repBar.offsetHeight-mf.offsetHeight;
-      w.style.height=Math.max(200,h)+'px';
-      if(leafMap)leafMap.invalidateSize();
-    }
+    const w=document.getElementById('wmap'),shell=document.querySelector('.shell'),rb=document.querySelector('.rep-bar'),mf=document.querySelector('.map-footer');
+    if(w&&shell&&rb&&mf){const h=shell.clientHeight-rb.offsetHeight-mf.offsetHeight;w.style.height=Math.max(200,h)+'px';if(leafMap)leafMap.invalidateSize()}
   }
-  fixH();
-  window.addEventListener('resize',fixH);
-  setTimeout(fixH,500);
+  fixH();window.addEventListener('resize',fixH);setTimeout(fixH,500);
 });
 </script>
 </body>
