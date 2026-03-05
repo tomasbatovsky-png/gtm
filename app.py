@@ -446,4 +446,3 @@ async def api_summary():
     except Exception as ex:
         summary=f"AI error: {str(ex)[:100]}"; gen="fallback"
     return {"summary":summary,"generated_by":gen,"gti":gti,"event_count":len(e),"timestamp":datetime.datetime.utcnow().isoformat()+"Z"}
-
