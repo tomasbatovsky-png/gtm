@@ -67,7 +67,7 @@ FALLBACK_EVENTS = [
 ]
 
 _cache = {
-    "events":[], "history":[], "alerts":[], "prev_gti":None,
+    "events":FALLBACK_EVENTS, "history":[], "alerts":[], "prev_gti":None,
     "last_refresh":None, "forecast":None, "regional":{},
     "strategic":{}, "supply_chain":{}, "gti_data":{},
     "velocity":"+0%", "source":"fallback",
@@ -267,7 +267,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_methods=["*"],allow_headers=["*"])
 
-def gevents(): return _cache.get("events",FALLBACK_EVENTS)
+def gevents(): e=_cache.get("events",[]); return e if e else FALLBACK_EVENTS
 
 @app.get("/api/events")
 async def api_events():
@@ -3021,6 +3021,13 @@ async function loadAll(){
 document.addEventListener('DOMContentLoaded',()=>{
   initMap();
   loadAll();
+  // Auto-retry if data empty after first load
+  setTimeout(async () => {
+    try {
+      const r = await fetch('/api/events-v4').then(x => x.json());
+      if (!r.count || r.count === 0) { loadAll(); }
+    } catch(e) {}
+  }, 4000);
   function fixH(){
     const w=document.getElementById('wmap'),shell=document.querySelector('.shell'),rb=document.querySelector('.rep-bar'),mf=document.querySelector('.map-footer');
     if(w&&shell&&rb&&mf){const h=shell.clientHeight-rb.offsetHeight-mf.offsetHeight;w.style.height=Math.max(200,h)+'px';if(leafMap)leafMap.invalidateSize()}
