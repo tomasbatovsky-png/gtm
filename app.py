@@ -928,8 +928,11 @@ def calc_alignment_trends():
     return trends
 
 def ai_daily_briefing(events, gti, status, snapshot):
+    today_str = datetime.datetime.utcnow().strftime("%d %b %Y").upper()
+    time_str = datetime.datetime.utcnow().strftime("%H%M")
     prompt = f"""You are a classified global intelligence analyst. Write a concise daily briefing (3-4 sentences, military/analytical style).
 
+TODAY'S DATE: {today_str} | TIME: {time_str}Z
 Current GTI: {gti}/10 — {status}
 Most active region: {snapshot['most_active_region']}
 Fastest escalation: {snapshot['fastest_escalation']}
@@ -937,9 +940,11 @@ GTI trend: {snapshot['trend']} ({snapshot['gti_change']:+.1f})
 Active events: {len(events)}
 
 Top events:
-""" + "\n".join(f"- [{e['type']}] {e['region']}: {e['summary'][:80]}" for e in events[:8]) + """
+""" + "\n".join(f"- [{e['type']}] {e['region']}: {e['summary'][:80]}" for e in events[:8]) + f"""
 
-Write like a DAILY INTEL BRIEF. End with: "Assessment: [one sentence risk outlook for next 24h]" """
+IMPORTANT: Use TODAY'S DATE ({today_str}) in your DTG header, NOT any past dates.
+Write like a DAILY INTEL BRIEF starting with **DAILY INTELLIGENCE BRIEF — DTG: {today_str} | GTI: {gti:.2f}/10 | ...**
+End with: "Assessment: [one sentence risk outlook for next 24h]" """
     result = ai_call(prompt, 280)
     if result:
         return result
