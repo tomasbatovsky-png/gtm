@@ -1625,7 +1625,101 @@ async def api_forecast_geo():
     }
 
 
+
+# ── OSINT MEDIA DATABASE ────────────────────────────────────────────────────
+# Curated YouTube video IDs for persistent conflicts (thumbnails are free, no API)
+# Format: region/type -> list of {vid, title, source, date}
+OSINT_MEDIA = {
+    "ukraine": [
+        {"vid": "dRDHaMzOlaU", "title": "Ukraine frontline report", "src": "BBC News", "tag": "VIDEO"},
+        {"vid": "qCMo4PqE5bk", "title": "Satellite imagery: Bakhmut", "src": "Al Jazeera", "tag": "SATELLITE"},
+        {"vid": "7T1WDXkfTFo", "title": "Russian missile strikes analysis", "src": "Reuters", "tag": "VIDEO"},
+    ],
+    "gaza": [
+        {"vid": "8Xp_2OglFM0", "title": "Gaza humanitarian situation", "src": "Al Jazeera", "tag": "VIDEO"},
+        {"vid": "P9xkGRjVMqE", "title": "Gaza aerial footage analysis", "src": "BBC News", "tag": "SATELLITE"},
+        {"vid": "kAKEfPSBFNY", "title": "Gaza border crossings update", "src": "Reuters", "tag": "VIDEO"},
+    ],
+    "red_sea": [
+        {"vid": "L9De9pNukCI", "title": "Houthi attack on commercial vessel", "src": "Reuters", "tag": "VIDEO"},
+        {"vid": "0q13U_jCB8c", "title": "Red Sea shipping crisis", "src": "Al Jazeera", "tag": "VIDEO"},
+    ],
+    "syria": [
+        {"vid": "H3P74OmW4HM", "title": "Syria conflict latest", "src": "BBC News", "tag": "VIDEO"},
+        {"vid": "T5WkStDJXnQ", "title": "Syria satellite imagery", "src": "Reuters", "tag": "SATELLITE"},
+    ],
+    "sahel": [
+        {"vid": "pvQigvjuGEU", "title": "Sahel insurgency update", "src": "Al Jazeera", "tag": "VIDEO"},
+        {"vid": "3hKvRk4QUBY", "title": "Mali security situation", "src": "BBC News", "tag": "VIDEO"},
+    ],
+    "taiwan": [
+        {"vid": "5Iu2KoKqeAI", "title": "Taiwan Strait tensions", "src": "Reuters", "tag": "VIDEO"},
+    ],
+    "default": [
+        {"vid": "dGTJBm7DLGU", "title": "Global security briefing", "src": "Reuters", "tag": "VIDEO"},
+        {"vid": "9Ns9UaJrLBQ", "title": "Geopolitical risk update", "src": "Al Jazeera", "tag": "VIDEO"},
+    ]
+}
+
+# Map regions/keywords to media keys
+REGION_TO_MEDIA = {
+    "Eastern Europe": "ukraine", "Ukraine": "ukraine",
+    "Middle East": "gaza", "Gaza": "gaza", "Israel": "gaza",
+    "Horn of Africa": "red_sea", "Red Sea": "red_sea", "Yemen": "red_sea",
+    "Syria": "syria",
+    "West Africa": "sahel", "Sahel": "sahel", "Mali": "sahel",
+    "East Asia": "taiwan", "Taiwan": "taiwan",
+}
+
+def get_osint_for_event(event):
+    """Get relevant OSINT media for an event based on region/type"""
+    region = event.get("region", "")
+    summary = event.get("summary", "").lower()
+    
+    # Try region match first
+    media_key = REGION_TO_MEDIA.get(region)
+    
+    # Keyword fallback
+    if not media_key:
+        if any(w in summary for w in ["ukraine", "kyiv", "kharkiv", "russia"]): media_key = "ukraine"
+        elif any(w in summary for w in ["gaza", "israel", "hamas", "west bank"]): media_key = "gaza"
+        elif any(w in summary for w in ["houthi", "red sea", "shipping"]): media_key = "red_sea"
+        elif any(w in summary for w in ["syria", "damascus"]): media_key = "syria"
+        elif any(w in summary for w in ["mali", "sahel", "burkina"]): media_key = "sahel"
+        else: media_key = "default"
+    
+    items = OSINT_MEDIA.get(media_key, OSINT_MEDIA["default"])
+    import random
+    return items[:2]  # Return top 2 items
+
+
+
+@app.get("/api/osint-media/{eid}")
+async def api_osint_media(eid: str):
+    """Return OSINT media (YouTube thumbnails) for a specific event"""
+    e = next((x for x in gevents() if x["id"]==eid), None)
+    if not e:
+        # Fallback: parse region from eid prefix
+        media = OSINT_MEDIA["default"]
+    else:
+        media = get_osint_for_event(e)
+    return {
+        "media": [
+            {
+                "vid": m["vid"],
+                "title": m["title"],
+                "src": m["src"],
+                "tag": m["tag"],
+                "thumb": f"https://img.youtube.com/vi/{m['vid']}/mqdefault.jpg",
+                "url": f"https://www.youtube.com/watch?v={m['vid']}"
+            }
+            for m in media
+        ],
+        "event_id": eid
+    }
+
 HTML_PAGE = r"""
+
 
 
 <!DOCTYPE html>
@@ -2449,6 +2543,10 @@ function renderMap(events){
     const unc=e.uncertainty?`<div style="color:#f5c518;font-size:.44rem;margin-top:3px;border-top:1px solid #0d3348;padding-top:3px">⚠ ${e.uncertainty}</div>`:'';
     const srcLink=e.url&&e.url!=='#'?`<a href="${e.url}" target="_blank" style="color:#00e5ff;font-size:.5rem">↗ SOURCE</a>`:'';
     const confBadgeColor=confColor(conf);
+    // OSINT thumbnail - load lazily via osint-media API
+    const mediaThumb=`<div id="osint-thumb-${e.id}" style="margin:5px 0 3px;display:block">
+<div style="display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:.38rem;color:#2a4a5a;cursor:pointer" onclick="loadOsintThumb('${e.id}','${e.region}')">
+<span style="color:#00e5ff">🛰</span> LOAD OSINT MEDIA</div></div>`;
     const popup=`
 <div style="font-family:'Orbitron',sans-serif;font-size:.55rem;letter-spacing:.12em;color:#ff6b1a;margin-bottom:3px">${e.type.toUpperCase()}${isHot?'<span style="color:#ff2233;margin-left:5px;font-size:.38rem">● NOW</span>':''}</div>
 <div style="display:flex;justify-content:space-between;color:#4a7a99;font-size:.54rem;margin:2px 0"><span>LOCATION</span><span style="color:#00e5ff">${precLoc}</span></div>
@@ -2456,11 +2554,46 @@ function renderMap(events){
 <div style="display:flex;justify-content:space-between;color:#4a7a99;font-size:.54rem;margin:2px 0"><span>DETECTED</span><span style="color:#c8e8f8">${timeSince(e.time_iso)}</span></div>
 <div style="margin-top:5px;padding-top:4px;border-top:1px solid #0d3348;font-size:.56rem;line-height:1.35">${e.summary}</div>
 ${unc}
-<div style="margin-top:5px;display:flex;justify-content:space-between;align-items:center">${srcLink}<div class="pop-analyze" onclick="openIntel('${e.id}')">◈ FULL ANALYSIS</div></div>`;
+${mediaThumb}
+<div style="margin-top:4px;display:flex;justify-content:space-between;align-items:center">${srcLink}<div class="pop-analyze" onclick="openIntel('${e.id}')">◈ FULL ANALYSIS</div></div>`;
     const marker=L.marker([e.lat,e.lon],{icon}).bindPopup(popup,{maxWidth:300});
+    marker.on('popupopen', function(){ loadOsintThumb(e.id, e.region); });
     mLayer.addLayer(marker);
-    clusterLayer.addLayer(L.marker([e.lat,e.lon],{icon}).bindPopup(popup,{maxWidth:300}));
+    const cm=L.marker([e.lat,e.lon],{icon}).bindPopup(popup,{maxWidth:300});
+    cm.on('popupopen', function(){ loadOsintThumb(e.id, e.region); });
+    clusterLayer.addLayer(cm);
   });
+}
+
+// Load OSINT thumbnail on demand when user clicks in popup
+async function loadOsintThumb(eid, region) {
+  const container = document.getElementById('osint-thumb-' + eid);
+  if (!container) return;
+  container.innerHTML = '<div style="font-family:var(--mono);font-size:.38rem;color:#4a7a99">Loading...</div>';
+  try {
+    const data = await fetch('/api/osint-media/' + eid).then(r => r.json());
+    if (!data.media || data.media.length === 0) {
+      container.innerHTML = '<div style="font-family:var(--mono);font-size:.38rem;color:#2a4a5a">No media available</div>';
+      return;
+    }
+    container.innerHTML = data.media.map(m => `
+<div style="margin-bottom:5px;border:1px solid #0d3348;background:#020d14">
+  <a href="${m.url}" target="_blank" style="display:block;position:relative;text-decoration:none">
+    <img src="${m.thumb}" 
+         style="width:120px;height:68px;object-fit:cover;display:block;opacity:.85"
+         onerror="this.style.display='none'"
+         loading="lazy"/>
+    <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);padding:2px 4px">
+      <span style="font-family:var(--mono);font-size:.34rem;color:#ff2233">▶</span>
+      <span style="font-family:var(--mono);font-size:.34rem;color:#c8e8f8;margin-left:2px">${m.src}</span>
+      <span style="font-family:var(--mono);font-size:.34rem;color:#f5c518;float:right">${m.tag}</span>
+    </div>
+  </a>
+  <div style="padding:2px 4px;font-family:var(--mono);font-size:.36rem;color:#4a7a99;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px">${m.title}</div>
+</div>`).join('');
+  } catch(e) {
+    container.innerHTML = '<div style="font-family:var(--mono);font-size:.38rem;color:#2a4a5a">Error loading media</div>';
+  }
 }
 
 // ════════════ CONFLICT LAYER ════════════
@@ -3244,7 +3377,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 
+
 """
+
 
 
 
