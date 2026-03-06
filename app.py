@@ -1619,199 +1619,15 @@ async def api_forecast_geo():
         "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
     }
 
-HTML_PAGE = """
 
+HTML_PAGE = """
 <!DOCTYPE html>
 <html lang="en" dir="ltr">
 <head>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>GLOBAL CONFLICT RADAR v4.3</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js">
-// OSINT EXTENSION
-
-// ═══════════════════════════════════════════════════════════════
-// OSINT EVIDENCE LAYER v4.3
-// Extension pattern - no existing functions replaced
-// ═══════════════════════════════════════════════════════════════
-
-let osintIdx = {};      // eid -> evidence meta
-let osintOn = false;    // toggle state
-let hovTimer = null;    // hover debounce
-
-// ── Toggle button ──────────────────────────────────────────────
-function toggleOsint(btn) {
-    osintOn = !osintOn;
-    btn.classList.toggle('on', osintOn);
-    // Re-render with/without badges
-    if (allEvents && allEvents.length) buildOsintBadges();
-}
-
-// ── Load evidence index from backend ──────────────────────────
-async function loadOsintIdx() {
-    try {
-        const r = await fetch('/api/osint-index').then(x => x.json());
-        osintIdx = {};
-        (r.evidence_available || []).forEach(e => { osintIdx[e.id] = e; });
-    } catch(e) { console.warn('[OSINT] index load failed'); }
-}
-
-// ── Build OSINT badge overlays on existing markers ─────────────
-// Called after renderMap - adds visual badge divs to marker elements
-function buildOsintBadges() {
-    // Remove existing badges
-    document.querySelectorAll('.ev-badge').forEach(el => el.remove());
-    document.querySelectorAll('.ev-marker-wrap').forEach(el => {
-        el.className = el.className.replace('ev-marker-wrap','just-wrap');
-    });
-    if (!osintOn) return;
-    // For each marker that has evidence, add badge
-    if (!leafMap) return;
-    leafMap.eachLayer(layer => {
-        if (!layer._latlng || !layer._icon) return;
-        const evData = findEvMetaByLatLon(layer._latlng.lat, layer._latlng.lng);
-        if (!evData) return;
-        const icon = layer._icon;
-        const wrap = icon.querySelector('.just-wrap, .ev-marker-wrap');
-        if (wrap) {
-            wrap.className = 'ev-marker-wrap';
-            const badge = document.createElement('div');
-            const typeClass = evData.type || 'photo';
-            const typeChar = typeClass === 'video' ? '▶' : typeClass === 'satellite' ? '🛰' : '📷';
-            badge.className = 'ev-badge ' + typeClass;
-            badge.title = typeClass + ' evidence';
-            badge.textContent = typeChar;
-            wrap.appendChild(badge);
-        }
-    });
-}
-
-// Helper: find evidence meta by approximate lat/lon
-function findEvMetaByLatLon(lat, lon) {
-    for (const ev of (allEvents || [])) {
-        if (Math.abs(ev.lat - lat) < 0.5 && Math.abs(ev.lon - lon) < 0.5) {
-            return osintIdx[ev.id] || null;
-        }
-    }
-    return null;
-}
-
-// ── Zoom overlay ───────────────────────────────────────────────
-function osintZoom(src) {
-    let ov = document.getElementById('zoom-ov');
-    if (!ov) {
-        ov = document.createElement('div');
-        ov.id = 'zoom-ov';
-        ov.innerHTML = '<span id="zoom-close" onclick="osintZoomClose()">✕</span><img src="" alt=""/>';
-        ov.onclick = osintZoomClose;
-        document.body.appendChild(ov);
-    }
-    ov.querySelector('img').src = src;
-    ov.classList.add('show');
-}
-function osintZoomClose() {
-    const ov = document.getElementById('zoom-ov');
-    if (ov) ov.classList.remove('show');
-}
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { osintZoomClose(); } });
-
-// ── Play OSINT video ───────────────────────────────────────────
-function osintPlayVideo(url) {
-    const ph = document.getElementById('osint-vid-ph');
-    const fw = document.getElementById('osint-vid-fw');
-    if (!ph || !fw) return;
-    ph.style.display = 'none';
-    fw.style.display = 'block';
-    fw.innerHTML = '<iframe src="' + url + '&autoplay=1" allow="autoplay;encrypted-media" allowfullscreen style="width:100%;height:100%;border:none"></iframe>';
-}
-
-// ── Build OSINT section HTML for Intel panel ───────────────────
-function buildOsintSection(osintData) {
-    if (!osintData || !osintData.has_evidence || !osintData.evidence) {
-        const conf = osintData && osintData.confidence;
-        const msg = conf && conf < 85
-            ? 'Confidence ' + conf + '% below 85% threshold for evidence'
-            : 'No visual evidence indexed for this event type';
-        return '<div class="osint-panel"><div class="osint-none">🛰 ' + msg + '</div></div>';
-    }
-    const evd = osintData.evidence;
-    const si = evd.source_icon || '🔍';
-    let mediaHTML = '';
-
-    if (evd.type === 'video' && evd.embed_url) {
-        const th = evd.thumbnail || '';
-        mediaHTML = '<div class="osint-media">'
-            + '<div class="osint-vid-placeholder" id="osint-vid-ph" onclick="osintPlayVideo(\'' + evd.embed_url + '\')">'
-            + (th ? '<img class="osint-vid-thumb" src="' + th + '" onerror="this.remove()">' : '')
-            + '<div class="osint-play-wrap"><div class="osint-play-btn">▶</div></div>'
-            + '</div>'
-            + '<div class="osint-vid-frame" id="osint-vid-fw"></div>'
-            + '</div>';
-    } else {
-        const src = evd.image_url || evd.thumbnail || '';
-        const imgCls = evd.type === 'satellite' ? 'osint-sat-img' : 'osint-img';
-        mediaHTML = '<div class="osint-media">'
-            + '<img class="' + imgCls + '" src="' + src + '" onclick="osintZoom(\'' + src + '\')" onerror="this.parentNode.style.display=\'none\'">'
-            + '</div>';
-    }
-
-    return '<div class="osint-panel">'
-        + '<div class="osint-panel-hdr"><span class="osint-panel-title">🛰 EVENT EVIDENCE</span><span class="osint-src-badge">' + si + ' ' + (evd.source || '—') + '</span></div>'
-        + mediaHTML
-        + '<div class="osint-meta">'
-        + '<div class="osint-caption">' + (evd.caption || '—') + '</div>'
-        + '<div class="osint-src-line"><span>' + si + '</span><span>' + (evd.source || '—') + '</span><span style="margin-left:auto;color:#00e5ff;font-size:.42rem">' + (evd.source_type || '').replace(/_/g, ' ').toUpperCase() + '</span></div>'
-        + '</div>'
-        + '<div class="osint-ai-box"><div class="osint-ai-lbl">IMAGERY ANALYSIS</div><div class="osint-ai-txt">' + (evd.ai_analysis || evd.ai_brief || 'Analysis pending.') + '</div></div>'
-        + '<div class="osint-warn">⚠ Evidence matched by region/type. Verify with primary sources.</div>'
-        + '</div>';
-}
-
-// ── Patch openIntel to include OSINT section ───────────────────
-// Wrap existing openIntel without replacing it
-const _openIntelBase = openIntel;
-async function openIntel(eid) {
-    // Call original to render base intel panel
-    await _openIntelBase(eid);
-    // Now inject OSINT section at top of body
-    const body = document.getElementById('intel-body');
-    if (!body) return;
-    // Fetch OSINT data
-    let osintData = { has_evidence: false };
-    try {
-        osintData = await fetch('/api/osint/' + eid).then(r => r.json());
-    } catch(e) {}
-    const osintHTML = buildOsintSection(osintData);
-    // Insert OSINT section before first child
-    const tmp = document.createElement('div');
-    tmp.innerHTML = osintHTML;
-    body.insertBefore(tmp.firstChild, body.firstChild);
-}
-
-// ── Patch loadAll to load OSINT index after data loads ─────────
-const _loadAllBase = loadAll;
-async function loadAll() {
-    await _loadAllBase();
-    await loadOsintIdx();
-    if (osintOn) buildOsintBadges();
-    // Add evidence icons to feed items
-    document.querySelectorAll('.fi').forEach(fi => {
-        const onclick = fi.getAttribute('onclick') || '';
-        const m = onclick.match(/openIntel\('([^']+)'\)/);
-        if (m && osintIdx[m[1]]) {
-            const typeEl = fi.querySelector('.fi-type');
-            if (typeEl && !typeEl.querySelector('.fi-ev')) {
-                const badge = document.createElement('span');
-                badge.className = 'fi-ev';
-                badge.title = osintIdx[m[1]].type + ' evidence';
-                badge.textContent = osintIdx[m[1]].source_icon || '🛰';
-                typeEl.appendChild(badge);
-            }
-        }
-    });
-}
-
-</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
@@ -2199,7 +2015,6 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 #zoom-ov.show{display:flex}
 #zoom-ov img{max-width:90vw;max-height:90vh;object-fit:contain;border:1px solid #1a6688}
 #zoom-close{position:fixed;top:14px;right:18px;color:#4a7a99;font-size:1.4rem;cursor:pointer;z-index:10000;line-height:1}
-
 
 /* FORECAST */
 /* ═══════════════════════════════════════
@@ -3213,203 +3028,243 @@ document.addEventListener('DOMContentLoaded',()=>{
   fixH();window.addEventListener('resize',fixH);setTimeout(fixH,500);
 });
 
-// FORECAST EXTENSION
+// === v4.3 EXTENSION ===
 
 // ═══════════════════════════════════════════════════════════════
-// GEOPOLITICAL FORECAST LAYER v4.3
-// Extension module - no existing functions replaced
+// GTM v4.3 EXTENSION MODULE
+// OSINT + FORECAST - no function redefinitions, no override chains
+// All patches use object/variable assignment, not function declarations
 // ═══════════════════════════════════════════════════════════════
 
+// ── OSINT state ─────────────────────────────────────────────────
+let osintIdx = {};
+let osintOn  = false;
+let hovTimer = null;
+
+// ── FORECAST state ───────────────────────────────────────────────
 let forecastLayer = null;
-let heatLayer = null;
-let fcData = null;
+let heatLayer     = null;
+let fcData        = null;
 let isForecastMode = false;
 
-// ── Probability color ───────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════
+// OSINT FUNCTIONS
+// ════════════════════════════════════════════════════════════════
+
+function toggleOsint(btn) {
+    osintOn = !osintOn;
+    btn.classList.toggle('on', osintOn);
+    buildOsintBadges();
+}
+
+async function loadOsintIdx() {
+    try {
+        const r = await fetch('/api/osint-index').then(x => x.json());
+        osintIdx = {};
+        (r.evidence_available || []).forEach(e => { osintIdx[e.id] = e; });
+    } catch(e) { console.warn('[OSINT] index failed'); }
+}
+
+function buildOsintBadges() {
+    document.querySelectorAll('.ev-badge').forEach(el => el.remove());
+    document.querySelectorAll('.ev-marker-wrap').forEach(el => {
+        el.className = el.className.replace('ev-marker-wrap', 'just-wrap');
+    });
+    if (!osintOn || !leafMap) return;
+    leafMap.eachLayer(layer => {
+        if (!layer._latlng || !layer._icon) return;
+        const ev = (allEvents || []).find(e =>
+            Math.abs(e.lat - layer._latlng.lat) < 0.5 &&
+            Math.abs(e.lon - layer._latlng.lng) < 0.5);
+        if (!ev || !osintIdx[ev.id]) return;
+        const meta = osintIdx[ev.id];
+        const wrap = layer._icon.querySelector('.just-wrap, .ev-marker-wrap');
+        if (!wrap) return;
+        wrap.className = 'ev-marker-wrap';
+        const badge = document.createElement('div');
+        badge.className = 'ev-badge ' + (meta.type || 'photo');
+        badge.textContent = meta.type === 'video' ? '▶' : meta.type === 'satellite' ? '🛰' : '📷';
+        wrap.appendChild(badge);
+    });
+}
+
+function osintZoom(src) {
+    let ov = document.getElementById('zoom-ov');
+    if (ov) { ov.querySelector('img').src = src; ov.classList.add('show'); }
+}
+function osintZoomClose() {
+    const ov = document.getElementById('zoom-ov');
+    if (ov) ov.classList.remove('show');
+}
+function osintPlayVideo(url) {
+    const ph = document.getElementById('osint-vid-ph');
+    const fw = document.getElementById('osint-vid-fw');
+    if (!ph || !fw) return;
+    ph.style.display = 'none'; fw.style.display = 'block';
+    fw.innerHTML = '<iframe src="' + url + '&autoplay=1" allow="autoplay;encrypted-media" allowfullscreen style="width:100%;height:100%;border:none"></iframe>';
+}
+
+function buildOsintSection(osintData) {
+    if (!osintData || !osintData.has_evidence || !osintData.evidence) {
+        const conf = osintData && osintData.confidence;
+        const msg = conf && conf < 85
+            ? 'Confidence ' + conf + '% below 85% threshold'
+            : 'No visual evidence indexed for this event type';
+        return '<div class="osint-panel"><div class="osint-none">🛰 ' + msg + '</div></div>';
+    }
+    const evd = osintData.evidence;
+    const si = evd.source_icon || '🔍';
+    let mediaHTML = '';
+    if (evd.type === 'video' && evd.embed_url) {
+        const th = evd.thumbnail || '';
+        mediaHTML = '<div class="osint-media">'
+            + '<div class="osint-vid-placeholder" id="osint-vid-ph" onclick="osintPlayVideo(\'' + evd.embed_url + '\')">'
+            + (th ? '<img class="osint-vid-thumb" src="' + th + '" onerror="this.remove()">' : '')
+            + '<div class="osint-play-wrap"><div class="osint-play-btn">▶</div></div>'
+            + '</div><div class="osint-vid-frame" id="osint-vid-fw"></div></div>';
+    } else {
+        const src = evd.image_url || evd.thumbnail || '';
+        const cls = evd.type === 'satellite' ? 'osint-sat-img' : 'osint-img';
+        mediaHTML = '<div class="osint-media"><img class="' + cls + '" src="' + src
+            + '" onclick="osintZoom(\'' + src + '\')" onerror="this.parentNode.style.display=\'none\'"></div>';
+    }
+    return '<div class="osint-panel">'
+        + '<div class="osint-panel-hdr"><span class="osint-panel-title">🛰 EVENT EVIDENCE</span>'
+        + '<span class="osint-src-badge">' + si + ' ' + (evd.source || '—') + '</span></div>'
+        + mediaHTML
+        + '<div class="osint-meta"><div class="osint-caption">' + (evd.caption || '—') + '</div>'
+        + '<div class="osint-src-line"><span>' + si + '</span><span>' + (evd.source || '—') + '</span>'
+        + '<span style="margin-left:auto;color:#00e5ff;font-size:.42rem">'
+        + (evd.source_type || '').replace(/_/g, ' ').toUpperCase() + '</span></div></div>'
+        + '<div class="osint-ai-box"><div class="osint-ai-lbl">IMAGERY ANALYSIS</div>'
+        + '<div class="osint-ai-txt">' + (evd.ai_analysis || evd.ai_brief || 'Analysis pending.') + '</div></div>'
+        + '<div class="osint-warn">⚠ Evidence matched by region/type. Verify with primary sources.</div>'
+        + '</div>';
+}
+
+// ════════════════════════════════════════════════════════════════
+// FORECAST FUNCTIONS
+// ════════════════════════════════════════════════════════════════
+
 function fcColor(prob) {
-    if (prob >= 0.72) return '#ff2233';
-    if (prob >= 0.50) return '#ff6b1a';
-    if (prob >= 0.30) return '#f5c518';
-    return '#00ff88';
+    return prob >= 0.72 ? '#ff2233' : prob >= 0.50 ? '#ff6b1a' : prob >= 0.30 ? '#f5c518' : '#00ff88';
 }
 
-function fcTrendColor(dir) {
-    return dir === 'escalating' ? '#ff2233' : dir === 'decreasing' ? '#00ff88' : '#4a7a99';
-}
-
-// ── Initialize forecast layers ──────────────────────────────────
 function initForecastLayer() {
     if (!leafMap || forecastLayer) return;
     forecastLayer = L.layerGroup();
 }
 
-// ── Load Leaflet.heat dynamically ──────────────────────────────
 function loadHeatPlugin(cb) {
-    if (window.HeatLayer || document.querySelector('[data-heat]')) { cb(); return; }
+    if (window.L && L.heatLayer) { cb(); return; }
+    if (document.querySelector('[data-heat]')) { setTimeout(cb, 500); return; }
     const s = document.createElement('script');
     s.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js';
     s.setAttribute('data-heat', '1');
     s.onload = cb;
-    s.onerror = cb; // fall back gracefully
+    s.onerror = cb;
     document.head.appendChild(s);
 }
 
-// ── Switch to FORECAST mode ─────────────────────────────────────
 function activateForecastMode() {
     isForecastMode = true;
     if (!leafMap) return;
-
-    // Hide all current layers
     [mLayer, clusterLayer, conflictLayer, tradeLayer, travelLayer, alignLayer].forEach(l => {
         if (l && leafMap.hasLayer(l)) leafMap.removeLayer(l);
     });
-
-    // Show mode banner
     const banner = document.getElementById('fc-mode-banner');
     if (banner) banner.classList.add('show');
-
-    // Show forecast legend
     document.querySelectorAll('.layer-legend').forEach(el => el.classList.remove('vis'));
     const fcLeg = document.getElementById('leg-forecast');
     if (fcLeg) fcLeg.classList.add('vis');
-
-    // Load and render
     loadHeatPlugin(() => renderForecastMap(fcData));
 }
 
-// ── Deactivate FORECAST mode ────────────────────────────────────
 function deactivateForecastMode() {
     isForecastMode = false;
     if (!leafMap) return;
-
-    // Remove forecast layers
     if (heatLayer && leafMap.hasLayer(heatLayer)) leafMap.removeLayer(heatLayer);
     if (forecastLayer && leafMap.hasLayer(forecastLayer)) leafMap.removeLayer(forecastLayer);
-
-    // Hide banner
     const banner = document.getElementById('fc-mode-banner');
     if (banner) banner.classList.remove('show');
 }
 
-// ── Render heatmap + region overlays ───────────────────────────
 function renderForecastMap(data) {
     if (!leafMap || !data) return;
     if (!forecastLayer) initForecastLayer();
-
-    // Clear previous forecast layers
     if (heatLayer && leafMap.hasLayer(heatLayer)) leafMap.removeLayer(heatLayer);
     forecastLayer.clearLayers();
+
+    const REGION_CENTERS = {
+        'Middle East':    [31.5, 35.5], 'Eastern Europe': [49.5, 32.0],
+        'East Asia':      [24.5, 121.0], 'Horn of Africa':  [12.5, 43.5],
+        'West Africa':    [13.0, 2.0],  'Mediterranean':   [35.5, 19.0],
+        'South Asia':     [30.0, 70.0], 'Central Asia':    [41.0, 63.0],
+    };
 
     const points = data.heatmap_points || [];
     const forecasts = data.forecasts || {};
 
-    // ── Heatmap ──
     if (window.L && L.heatLayer && points.length) {
         heatLayer = L.heatLayer(points, {
-            radius: 55,
-            blur: 38,
-            maxZoom: 8,
-            max: 0.95,
-            gradient: {
-                0.0: '#001a00',
-                0.25: '#006600',
-                0.45: '#00aa00',
-                0.58: '#f5c518',
-                0.72: '#ff6b1a',
-                0.88: '#ff2233',
-                1.0: '#8b0000'
-            }
+            radius: 55, blur: 38, maxZoom: 8, max: 0.95,
+            gradient: {0.0:'#001a00',0.28:'#006600',0.45:'#00aa00',0.58:'#f5c518',0.72:'#ff6b1a',0.88:'#ff2233',1.0:'#8b0000'}
         });
         leafMap.addLayer(heatLayer);
     } else {
-        // Fallback: filled circles if heat plugin failed to load
+        // Fallback circles
         points.forEach(pt => {
-            const [lat, lon, intensity] = pt;
-            const col = fcColor(intensity);
-            L.circle([lat, lon], {
-                radius: 180000,
-                color: 'transparent',
-                fillColor: col,
-                fillOpacity: 0.18 + intensity * 0.22,
-                interactive: false
+            L.circle([pt[0], pt[1]], {
+                radius: 180000, color: 'transparent',
+                fillColor: fcColor(pt[2]), fillOpacity: 0.18 + pt[2] * 0.22, interactive: false
             }).addTo(forecastLayer);
         });
     }
 
-    // ── Region labels with probability ──
-    Object.entries(forecasts).forEach(([regionName, fr]) => {
-        const REGION_CENTERS = {
-            'Middle East':    [31.5, 35.5],
-            'Eastern Europe': [49.5, 32.0],
-            'East Asia':      [24.5, 121.0],
-            'Horn of Africa': [12.5, 43.5],
-            'West Africa':    [13.0,  2.0],
-            'Mediterranean':  [35.5, 19.0],
-            'South Asia':     [30.0, 70.0],
-            'Central Asia':   [41.0, 63.0],
-        };
-        const center = REGION_CENTERS[regionName];
+    Object.entries(forecasts).forEach(([rname, fr]) => {
+        const center = REGION_CENTERS[rname];
         if (!center) return;
-
-        const pct = fr.probability_pct + '%';
         const col = fr.color || fcColor(fr.probability || 0);
+        const pct = fr.probability_pct + '%';
         const arrow = fr.trend_arrow || '→';
-        const label = fr.label || '';
 
-        // Pulsing circle border
         L.circle(center, {
             radius: fr.probability > 0.5 ? 240000 : 180000,
-            color: col,
-            weight: fr.probability > 0.65 ? 2 : 1,
-            opacity: 0.6,
-            fillOpacity: 0,
-            dashArray: fr.probability > 0.65 ? null : '6,4',
-        }).bindPopup(buildFcPopup(regionName, fr)).addTo(forecastLayer);
+            color: col, weight: fr.probability > 0.65 ? 2 : 1,
+            opacity: 0.6, fillOpacity: 0, dashArray: fr.probability > 0.65 ? null : '6,4'
+        }).bindPopup(buildFcPopup(rname, fr)).addTo(forecastLayer);
 
-        // Label marker
         const icon = L.divIcon({
             className: '',
             html: '<div class="fc-region-label" style="border-color:' + col + ';color:' + col + '">'
                 + '<span style="font-family:var(--disp);font-size:.52rem;font-weight:700">' + pct + '</span>'
                 + '<span style="margin-left:4px;font-size:.6rem">' + arrow + '</span><br>'
-                + '<span style="font-size:.38rem;opacity:.8">' + regionName + '</span>'
-                + '</div>',
-            iconAnchor: [0, 0],
-            iconSize: null,
+                + '<span style="font-size:.38rem;opacity:.8">' + rname + '</span></div>',
+            iconAnchor: [0, 0], iconSize: null,
         });
-        L.marker(center, { icon })
-            .bindPopup(buildFcPopup(regionName, fr))
-            .addTo(forecastLayer);
+        L.marker(center, {icon}).bindPopup(buildFcPopup(rname, fr)).addTo(forecastLayer);
     });
 
     leafMap.addLayer(forecastLayer);
 }
 
-function buildFcPopup(regionName, fr) {
+function buildFcPopup(rname, fr) {
     const col = fr.color || '#f5c518';
-    const pct = fr.probability_pct + '%';
-    const label = fr.label || '';
-    const arrow = fr.trend_arrow || '→';
     const drivers = (fr.drivers || []).map(d =>
         '<div style="font-size:.5rem;color:#4a7a99;padding:1px 0">· ' + d.signal + (d.count ? ' (' + d.count + ')' : '') + '</div>'
     ).join('');
-
     return '<div style="font-family:Orbitron,sans-serif;font-size:.55rem;letter-spacing:.12em;color:' + col + ';margin-bottom:4px">'
-        + regionName.toUpperCase() + '</div>'
+        + rname.toUpperCase() + '</div>'
         + '<div style="font-family:var(--disp);font-size:1.1rem;font-weight:900;color:' + col + ';margin:2px 0">'
-        + pct + ' <span style="font-size:.7rem">' + arrow + '</span></div>'
-        + '<div style="font-family:var(--disp);font-size:.44rem;padding:1px 5px;border:1px solid ' + col + ';color:' + col + ';display:inline-block;margin-bottom:5px">' + label + '</div>'
-        + '<div style="font-size:.46rem;color:#4a7a99;margin-bottom:3px">FORECAST DRIVERS:</div>'
-        + drivers
+        + fr.probability_pct + '% <span style="font-size:.7rem">' + (fr.trend_arrow || '→') + '</span></div>'
+        + '<div style="font-family:var(--disp);font-size:.44rem;padding:1px 5px;border:1px solid ' + col + ';color:' + col + ';display:inline-block;margin-bottom:5px">' + (fr.label || '') + '</div>'
+        + '<div style="font-size:.46rem;color:#4a7a99;margin-bottom:3px">FORECAST DRIVERS:</div>' + drivers
         + '<div style="font-size:.4rem;color:#2a4a5a;margin-top:5px;border-top:1px solid #0d3348;padding-top:3px">72H ESCALATION PROBABILITY · MODEL v4.3</div>';
 }
 
-// ── Render left-panel forecast data ───────────────────────────
 function renderForecastPanel(data) {
     if (!data) return;
     fcData = data;
-
-    // Update confidence badge
     const confBadge = document.getElementById('fc72-conf-badge');
     if (confBadge) confBadge.textContent = data.confidence + '% conf';
     const confVal = document.getElementById('fc72-conf-val');
@@ -3417,99 +3272,115 @@ function renderForecastPanel(data) {
     const sigsEl = document.getElementById('fc72-sigs');
     if (sigsEl) sigsEl.textContent = (data.signals_analyzed || 0) + ' signals';
 
-    // Regions
+    const panelRegions = data.panel_regions || ['Middle East','Eastern Europe','East Asia','Horn of Africa','West Africa'];
     const regEl = document.getElementById('fc72-regions');
-    const panelRegions = data.panel_regions || ['Middle East', 'Eastern Europe', 'East Asia', 'Horn of Africa', 'West Africa'];
-
     if (regEl) {
         regEl.innerHTML = panelRegions.map(rname => {
-            const fr = (data.forecasts || {})[rname];
-            if (!fr) return '';
+            const fr = (data.forecasts || {})[rname]; if (!fr) return '';
             const col = fr.color || '#f5c518';
-            const pct = fr.probability_pct + '%';
-            const trendCol = fcTrendColor(fr.trend_dir || 'stable');
-            const barW = Math.round(fr.probability * 100);
-
+            const trendCol = fr.trend_dir === 'escalating' ? '#ff2233' : fr.trend_dir === 'decreasing' ? '#00ff88' : '#4a7a99';
             return '<div class="fc72-region">'
-                + '<div class="fc72-region-top">'
-                + '<span class="fc72-region-name">' + rname + '</span>'
+                + '<div class="fc72-region-top"><span class="fc72-region-name">' + rname + '</span>'
                 + '<div class="fc72-region-meta">'
                 + '<span class="fc72-trend" style="color:' + trendCol + '">' + (fr.trend_arrow || '→') + '</span>'
-                + '<span class="fc72-region-prob" style="color:' + col + '">' + pct + '</span>'
+                + '<span class="fc72-region-prob" style="color:' + col + '">' + fr.probability_pct + '%</span>'
                 + '</div></div>'
                 + '<div class="fc72-label" style="color:' + col + '">' + (fr.label || '') + '</div>'
-                + '<div class="fc72-bar"><div class="fc72-bar-fill" style="width:' + barW + '%;background:' + col + '"></div></div>'
+                + '<div class="fc72-bar"><div class="fc72-bar-fill" style="width:' + Math.round(fr.probability * 100) + '%;background:' + col + '"></div></div>'
                 + '</div>';
         }).join('');
     }
 
-    // Global drivers (from all regions combined)
     const allDrivers = {};
     Object.values(data.forecasts || {}).forEach(fr => {
-        (fr.drivers || []).forEach(d => {
-            allDrivers[d.signal] = (allDrivers[d.signal] || 0) + (d.count || 1);
-        });
+        (fr.drivers || []).forEach(d => { allDrivers[d.signal] = (allDrivers[d.signal] || 0) + (d.count || 1); });
     });
-    const topDrivers = Object.entries(allDrivers)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 6);
-
+    const topDrivers = Object.entries(allDrivers).sort((a,b) => b[1]-a[1]).slice(0, 6);
     const drivEl = document.getElementById('fc72-drivers-list');
+    const driverColors = ['#ff2233','#ff6b1a','#f5c518','#aaaaff','#4a7a99','#2a4a5a'];
     if (drivEl) {
-        const driverColors = ['#ff2233', '#ff6b1a', '#f5c518', '#aaaaff', '#4a7a99', '#2a4a5a'];
-        if (topDrivers.length) {
-            drivEl.innerHTML = topDrivers.map(([sig, cnt], i) =>
-                '<div class="fc72-driver-row">'
-                + '<div class="fc72-driver-dot" style="background:' + (driverColors[i] || '#2a4a5a') + '"></div>'
+        drivEl.innerHTML = topDrivers.length
+            ? topDrivers.map(([sig,cnt],i) =>
+                '<div class="fc72-driver-row"><div class="fc72-driver-dot" style="background:' + (driverColors[i]||'#2a4a5a') + '"></div>'
                 + '<span class="fc72-driver-txt">' + sig + '</span>'
-                + '<span class="fc72-driver-cnt">' + cnt + '</span>'
-                + '</div>'
-            ).join('');
-        } else {
-            drivEl.innerHTML = '<div class="fc72-driver-row"><span class="fc72-driver-txt" style="color:var(--muted)">Baseline monitoring active</span></div>';
-        }
+                + '<span class="fc72-driver-cnt">' + cnt + '</span></div>').join('')
+            : '<div class="fc72-driver-row"><span class="fc72-driver-txt" style="color:var(--muted)">Baseline monitoring active</span></div>';
     }
-
-    // If already in forecast mode, re-render map
-    if (isForecastMode) {
-        loadHeatPlugin(() => renderForecastMap(data));
-    }
+    if (isForecastMode) loadHeatPlugin(() => renderForecastMap(data));
 }
 
-// ── Patch setLayer to handle FORECAST ─────────────────────────
-const _setLayerBase = setLayer;
-function setLayer(name, btn) {
+// ════════════════════════════════════════════════════════════════
+// PATCHED setLayer — handles 'forecast' mode
+// Uses variable assignment so it doesn't conflict with hoisting
+// ════════════════════════════════════════════════════════════════
+const _setLayerOrig = setLayer;
+setLayer = function(name, btn) {
     if (name === 'forecast') {
-        // Handle forecast separately
         currentLayer = 'forecast';
         document.querySelectorAll('.layer-btn').forEach(b => b.className = 'layer-btn');
         if (btn) btn.className = 'layer-btn al-forecast';
         activateForecastMode();
         return;
     }
-    if (isForecastMode) {
-        deactivateForecastMode();
-    }
-    _setLayerBase(name, btn);
-}
+    if (isForecastMode) deactivateForecastMode();
+    _setLayerOrig(name, btn);
+};
 
-// ── Patch loadAll to also fetch forecast data ──────────────────
-const _loadAllFc = loadAll;
-async function loadAll() {
-    await _loadAllFc();
+// ════════════════════════════════════════════════════════════════
+// PATCHED openIntel — prepends OSINT section
+// ════════════════════════════════════════════════════════════════
+const _openIntelOrig = openIntel;
+openIntel = async function(eid) {
+    await _openIntelOrig(eid);
+    const body = document.getElementById('intel-body');
+    if (!body) return;
+    let osintData = { has_evidence: false };
+    try { osintData = await fetch('/api/osint/' + eid).then(r => r.json()); } catch(e) {}
+    const tmp = document.createElement('div');
+    tmp.innerHTML = buildOsintSection(osintData);
+    if (tmp.firstChild) body.insertBefore(tmp.firstChild, body.firstChild);
+};
+
+// ════════════════════════════════════════════════════════════════
+// PATCHED loadAll — adds OSINT + FORECAST loading
+// ════════════════════════════════════════════════════════════════
+const _loadAllOrig = loadAll;
+loadAll = async function() {
+    await _loadAllOrig();
+    // Load OSINT index
+    await loadOsintIdx();
+    if (osintOn) buildOsintBadges();
+    // Add OSINT badges to feed
+    document.querySelectorAll('.fi').forEach(fi => {
+        const oc = fi.getAttribute('onclick') || '';
+        const m = oc.match(/openIntel\('([^']+)'\)/);
+        if (m && osintIdx[m[1]]) {
+            const typeEl = fi.querySelector('.fi-type');
+            if (typeEl && !typeEl.querySelector('.fi-ev')) {
+                const badge = document.createElement('span');
+                badge.className = 'fi-ev';
+                badge.title = (osintIdx[m[1]].type || '') + ' evidence';
+                badge.textContent = osintIdx[m[1]].source_icon || '🛰';
+                typeEl.appendChild(badge);
+            }
+        }
+    });
+    // Load forecast data
     try {
         const fd = await fetch('/api/forecast-geo').then(r => r.json());
         renderForecastPanel(fd);
-    } catch(e) {
-        console.warn('[FORECAST] load failed', e);
-    }
+    } catch(e) { console.warn('[FORECAST]', e); }
     initForecastLayer();
-}
+};
+
+// Escape key closes zoom
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { osintZoomClose(); closeIntel(); } });
 
 </script>
+
+<div id="zoom-ov" onclick="osintZoomClose()"><span id="zoom-close" onclick="osintZoomClose()">✕</span><img src="" alt=""/></div>
 </body>
 </html>
-
 
 """
 
