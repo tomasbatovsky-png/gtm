@@ -2618,7 +2618,7 @@ function renderAlignLayer(conflict){
   alignLayer.clearLayers();
   const data=alignData[conflict];
   if(!data||!data.countries)return;
-  Object.entries(data.countries).forEach(([country,info])=>{
+  Object.entries(data.countries||{}).forEach(([country,info])=>{
     const c=stanceColor(info.stance);
     const trends=alignTrends[conflict]||{};
     const tr=trends[country];
@@ -2786,7 +2786,7 @@ function renderAlignmentPanel(conflict){
   if(selEl){selEl.innerHTML=Object.keys(alignData).map(k=>`<button class="align-conf-btn${k===conflict?' active':''}" onclick="selectAlignConflict('${k}')">${(alignData[k].conflict||k).slice(0,12).toUpperCase()}</button>`).join('')}
   const el=document.getElementById('align-list');if(!el)return;
   const trends=alignTrends[conflict]||{};
-  const sorted=Object.entries(data.countries).sort((a,b)=>{const o={supporting_A:0,supporting_B:1,ambiguous:2,neutral:3};return(o[a[1].stance]||3)-(o[b[1].stance]||3)});
+  const sorted=Object.entries(data.countries||{}).sort((a,b)=>{const o={supporting_A:0,supporting_B:1,ambiguous:2,neutral:3};return(o[a[1].stance]||3)-(o[b[1].stance]||3)});
   el.innerHTML=`<div>${sorted.map(([country,info])=>{
     const c=stanceColor(info.stance);
     const tr=trends[country];
@@ -2883,7 +2883,7 @@ function renderSummary(data){
 }
 function renderTravelPanel(data){
   const el=document.getElementById('travel-list');if(!el)return;
-  const sorted=Object.entries(data).sort((a,b)=>{const ord={CRITICAL:0,HIGH:1,MODERATE:2,LOW:3};return(ord[a[1].risk]||3)-(ord[b[1].risk]||3)});
+  const sorted=Object.entries(data||{}).sort((a,b)=>{const ord={CRITICAL:0,HIGH:1,MODERATE:2,LOW:3};return(ord[a[1].risk]||3)-(ord[b[1].risk]||3)});
   el.innerHTML=sorted.map(([country,d])=>`<div class="travel-row" title="${d.reason}"><span class="travel-country">${country}</span><span class="travel-risk risk-${d.risk}">${d.risk}</span></div>`).join('');
 }
 
@@ -2980,26 +2980,27 @@ async function loadAll(){
     if(alignG.alignment)alignData['gaza_conflict']=alignG.alignment;
     if(alignTr.trends)alignTrends=alignTr.trends;
 
-    renderGTI(sr);
-    renderChart(tr.trend||[]);
-    renderMap(allEvents);
-    renderFeed(allEvents);
-    renderForecast(fc, act.events_detected_24h);
-    renderRegional(reg.regional||{});
-    renderStrategic(strat);
-    renderSupply(sup);
-    renderAlerts(al.alerts||[]);
-    renderActivity(act);
-    renderConflicts(conflicts.conflicts||[]);
-    renderConflictLayer(conflicts.conflicts||[]);
-    renderTradePanels(trade);
-    renderTradeLayer(trade.routes||[], chkTraffic.chokepoints||{});
-    renderTravelPanel(travelData);
-    renderTravelLayer(travelData);
-    renderTransparency(act,sr);
-    renderSnapshot(snap);
-    renderChokeTraffic(chkTraffic.chokepoints||{});
-    renderAlignmentPanel('ukraine_war');
+    const _safe = (label, fn) => { try { fn(); } catch(e) { console.warn('[Render]', label, e.message); } };
+    _safe('GTI',          ()=>renderGTI(sr));
+    _safe('Chart',        ()=>renderChart(tr.trend||[]));
+    _safe('Map',          ()=>renderMap(allEvents));
+    _safe('Feed',         ()=>renderFeed(allEvents));
+    _safe('Forecast',     ()=>renderForecast(fc, act.events_detected_24h||0));
+    _safe('Regional',     ()=>renderRegional(reg.regional||{}));
+    _safe('Strategic',    ()=>renderStrategic(strat||{}));
+    _safe('Supply',       ()=>renderSupply(sup||{}));
+    _safe('Alerts',       ()=>renderAlerts(al.alerts||[]));
+    _safe('Activity',     ()=>renderActivity(act||{}));
+    _safe('Conflicts',    ()=>renderConflicts(conflicts.conflicts||[]));
+    _safe('ConflictLayer',()=>renderConflictLayer(conflicts.conflicts||[]));
+    _safe('Trade',        ()=>renderTradePanels(trade||{}));
+    _safe('TradeLayer',   ()=>renderTradeLayer(trade.routes||[], chkTraffic.chokepoints||{}));
+    _safe('Travel',       ()=>renderTravelPanel(travelData||{}));
+    _safe('TravelLayer',  ()=>renderTravelLayer(travelData||{}));
+    _safe('Transparency', ()=>renderTransparency(act||{},sr||{}));
+    _safe('Snapshot',     ()=>renderSnapshot(snap||{}));
+    _safe('Choke',        ()=>renderChokeTraffic(chkTraffic.chokepoints||{}));
+    _safe('Alignment',    ()=>renderAlignmentPanel('ukraine_war'));
 
     const ms=document.getElementById('map-src');
     if(ms)ms.textContent=`${er.count||0} INCIDENTS · ${new Date().toUTCString().slice(17,25)} UTC`;
