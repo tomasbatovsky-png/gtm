@@ -250,6 +250,12 @@ async def refresh_data():
     snapshot  = {"ts":datetime.datetime.utcnow().isoformat()+"Z","gti":gti_data["gti"],"event_count":len(events),"events":[{k:v for k,v in e.items() if k!="full_text"} for e in events]}
     history   = (_cache.get("history",[]) + [snapshot])[-144:]
     _cache = {"events":events,"history":history,"gti_data":gti_data,"regional":regional,"strategic":strategic,"supply_chain":supply,"alerts":alerts,"prev_gti":gti_data["gti"],"last_refresh":datetime.datetime.utcnow().isoformat()+"Z","forecast":forecast,"velocity":velocity,"source":source}
+    # Prefetch YouTube RSS in background
+    for ch_name, cid in YT_CHANNELS.items():
+        try:
+            await fetch_yt_channel(ch_name, cid)
+        except:
+            pass
     print(f"[Refresh] Done. GTI={gti_data['gti']} Events={len(events)}")
 
 async def refresh_loop():
@@ -1352,6 +1358,17 @@ async def api_osint(eid: str):
         "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
     }
 
+@app.get("/api/osint-media/{eid}")
+async def api_osint_media(eid: str):
+    """Return fresh YouTube OSINT media for an event"""
+    e = next((x for x in gevents() if x["id"]==eid), None)
+    region = e.get("region", "default") if e else "default"
+    media = await get_osint_for_region(region)
+    if not media:
+        media = get_osint_for_event(e) if e else []
+    return {"media": media, "event_id": eid, "region": region}
+
+
 @app.get("/api/osint-index")
 async def api_osint_index():
     """Return list of event IDs that have visual evidence available."""
@@ -1626,99 +1643,101 @@ async def api_forecast_geo():
 
 
 
-# ── OSINT MEDIA DATABASE ────────────────────────────────────────────────────
-# Curated YouTube video IDs for persistent conflicts (thumbnails are free, no API)
-# Format: region/type -> list of {vid, title, source, date}
-OSINT_MEDIA = {
-    "ukraine": [
-        {"vid": "dRDHaMzOlaU", "title": "Ukraine frontline report", "src": "BBC News", "tag": "VIDEO"},
-        {"vid": "qCMo4PqE5bk", "title": "Satellite imagery: Bakhmut", "src": "Al Jazeera", "tag": "SATELLITE"},
-        {"vid": "7T1WDXkfTFo", "title": "Russian missile strikes analysis", "src": "Reuters", "tag": "VIDEO"},
-    ],
-    "gaza": [
-        {"vid": "8Xp_2OglFM0", "title": "Gaza humanitarian situation", "src": "Al Jazeera", "tag": "VIDEO"},
-        {"vid": "P9xkGRjVMqE", "title": "Gaza aerial footage analysis", "src": "BBC News", "tag": "SATELLITE"},
-        {"vid": "kAKEfPSBFNY", "title": "Gaza border crossings update", "src": "Reuters", "tag": "VIDEO"},
-    ],
-    "red_sea": [
-        {"vid": "L9De9pNukCI", "title": "Houthi attack on commercial vessel", "src": "Reuters", "tag": "VIDEO"},
-        {"vid": "0q13U_jCB8c", "title": "Red Sea shipping crisis", "src": "Al Jazeera", "tag": "VIDEO"},
-    ],
-    "syria": [
-        {"vid": "H3P74OmW4HM", "title": "Syria conflict latest", "src": "BBC News", "tag": "VIDEO"},
-        {"vid": "T5WkStDJXnQ", "title": "Syria satellite imagery", "src": "Reuters", "tag": "SATELLITE"},
-    ],
-    "sahel": [
-        {"vid": "pvQigvjuGEU", "title": "Sahel insurgency update", "src": "Al Jazeera", "tag": "VIDEO"},
-        {"vid": "3hKvRk4QUBY", "title": "Mali security situation", "src": "BBC News", "tag": "VIDEO"},
-    ],
-    "taiwan": [
-        {"vid": "5Iu2KoKqeAI", "title": "Taiwan Strait tensions", "src": "Reuters", "tag": "VIDEO"},
-    ],
-    "default": [
-        {"vid": "dGTJBm7DLGU", "title": "Global security briefing", "src": "Reuters", "tag": "VIDEO"},
-        {"vid": "9Ns9UaJrLBQ", "title": "Geopolitical risk update", "src": "Al Jazeera", "tag": "VIDEO"},
-    ]
+# ── OSINT MEDIA SYSTEM — YouTube RSS (no API key needed) ──────────────────
+import xml.etree.ElementTree as ET
+
+# YouTube channel IDs for major news sources
+YT_CHANNELS = {
+    "BBC News":   "UCnUYZLuoy1rq1aVMwx4aTzw",
+    "Al Jazeera": "UCNye-wNBqNL5ZzHSJdYgjXg",
+    "DW News":    "UCknLrEdhRCp1aegoMqRaCZg",
+    "WION":       "UCVqKcFPCUNtk-kMSZOxCVGw",
+    "Sky News":   "UCoMdktPbSTixAyNGwb-UYkQ",
 }
 
-# Map regions/keywords to media keys
-REGION_TO_MEDIA = {
-    "Eastern Europe": "ukraine", "Ukraine": "ukraine",
-    "Middle East": "gaza", "Gaza": "gaza", "Israel": "gaza",
-    "Horn of Africa": "red_sea", "Red Sea": "red_sea", "Yemen": "red_sea",
-    "Syria": "syria",
-    "West Africa": "sahel", "Sahel": "sahel", "Mali": "sahel",
-    "East Asia": "taiwan", "Taiwan": "taiwan",
+# Region -> which channels to prefer
+REGION_CHANNELS = {
+    "Eastern Europe": ["BBC News", "DW News", "Al Jazeera"],
+    "Middle East":    ["Al Jazeera", "BBC News", "WION"],
+    "Horn of Africa": ["Al Jazeera", "BBC News", "DW News"],
+    "West Africa":    ["Al Jazeera", "DW News", "BBC News"],
+    "East Asia":      ["WION", "Sky News", "BBC News"],
+    "South Asia":     ["WION", "Al Jazeera", "DW News"],
+    "default":        ["BBC News", "Al Jazeera", "DW News"],
 }
+
+_yt_cache = {}  # channel_name -> [{vid, title, published}]
+_yt_last_fetch = {}  # channel_name -> timestamp
+
+async def fetch_yt_channel(name, cid):
+    """Fetch latest videos from YouTube channel RSS"""
+    import datetime
+    now = datetime.datetime.utcnow()
+    last = _yt_last_fetch.get(name)
+    if last and (now - last).seconds < 1800:  # cache 30min
+        return _yt_cache.get(name, [])
+    
+    try:
+        import urllib.request
+        url = f"https://www.youtube.com/feeds/videos.xml?channel_id={cid}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=6) as r:
+            xml_data = r.read().decode("utf-8")
+        
+        ns = {"yt": "http://www.youtube.com/xml/schemas/2015",
+              "atom": "http://www.w3.org/2005/Atom"}
+        root = ET.fromstring(xml_data)
+        entries = root.findall("atom:entry", ns)
+        
+        videos = []
+        for entry in entries[:5]:
+            vid_id = entry.find("yt:videoId", ns)
+            title  = entry.find("atom:title", ns)
+            pub    = entry.find("atom:published", ns)
+            if vid_id is not None and title is not None:
+                videos.append({
+                    "vid":   vid_id.text,
+                    "title": title.text,
+                    "pub":   pub.text if pub is not None else "",
+                    "src":   name,
+                    "tag":   "VIDEO",
+                    "thumb": f"https://img.youtube.com/vi/{vid_id.text}/mqdefault.jpg",
+                    "url":   f"https://www.youtube.com/watch?v={vid_id.text}"
+                })
+        
+        _yt_cache[name] = videos
+        _yt_last_fetch[name] = now
+        return videos
+    except Exception as ex:
+        print(f"[YT RSS] {name}: {ex}")
+        return _yt_cache.get(name, [])
+
+async def get_osint_for_region(region):
+    """Get fresh YouTube videos for a region"""
+    channels = REGION_CHANNELS.get(region, REGION_CHANNELS["default"])
+    results = []
+    for ch_name in channels[:2]:  # fetch from 2 channels
+        cid = YT_CHANNELS.get(ch_name)
+        if cid:
+            videos = await fetch_yt_channel(ch_name, cid)
+            if videos:
+                results.append(videos[0])  # latest video from each channel
+    return results if results else []
 
 def get_osint_for_event(event):
-    """Get relevant OSINT media for an event based on region/type"""
-    region = event.get("region", "")
-    summary = event.get("summary", "").lower()
-    
-    # Try region match first
-    media_key = REGION_TO_MEDIA.get(region)
-    
-    # Keyword fallback
-    if not media_key:
-        if any(w in summary for w in ["ukraine", "kyiv", "kharkiv", "russia"]): media_key = "ukraine"
-        elif any(w in summary for w in ["gaza", "israel", "hamas", "west bank"]): media_key = "gaza"
-        elif any(w in summary for w in ["houthi", "red sea", "shipping"]): media_key = "red_sea"
-        elif any(w in summary for w in ["syria", "damascus"]): media_key = "syria"
-        elif any(w in summary for w in ["mali", "sahel", "burkina"]): media_key = "sahel"
-        else: media_key = "default"
-    
-    items = OSINT_MEDIA.get(media_key, OSINT_MEDIA["default"])
-    import random
-    return items[:2]  # Return top 2 items
+    """Sync wrapper — returns cached data or empty (async fetch happens via endpoint)"""
+    region = event.get("region", "default")
+    channels = REGION_CHANNELS.get(region, REGION_CHANNELS["default"])
+    results = []
+    for ch_name in channels[:2]:
+        cached = _yt_cache.get(ch_name, [])
+        if cached:
+            results.append(cached[0])
+    return results
 
-
-
-@app.get("/api/osint-media/{eid}")
-async def api_osint_media(eid: str):
-    """Return OSINT media (YouTube thumbnails) for a specific event"""
-    e = next((x for x in gevents() if x["id"]==eid), None)
-    if not e:
-        # Fallback: parse region from eid prefix
-        media = OSINT_MEDIA["default"]
-    else:
-        media = get_osint_for_event(e)
-    return {
-        "media": [
-            {
-                "vid": m["vid"],
-                "title": m["title"],
-                "src": m["src"],
-                "tag": m["tag"],
-                "thumb": f"https://img.youtube.com/vi/{m['vid']}/mqdefault.jpg",
-                "url": f"https://www.youtube.com/watch?v={m['vid']}"
-            }
-            for m in media
-        ],
-        "event_id": eid
-    }
 
 HTML_PAGE = r"""
+
 
 
 
@@ -3378,7 +3397,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 
+
 """
+
 
 
 
