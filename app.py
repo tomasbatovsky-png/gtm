@@ -1620,7 +1620,7 @@ async def api_forecast_geo():
     }
 
 
-HTML_PAGE = """HTML_PAGE = r"""
+HTML_PAGE = r"""
 
 
 <!DOCTYPE html>
@@ -3238,7 +3238,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 
+
 """
+
 
 
 
