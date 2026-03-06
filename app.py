@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 import feedparser
 
-ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "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")
+ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 EVENT_KEYWORDS = {
     "missile strike":        ["missile strike","rocket attack","ballistic missile","missile launch","rocket fire","katyusha","missile fired","rockets fired"],
@@ -1971,113 +1971,6 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .intel-loading{text-align:center;padding:28px 20px;font-family:var(--mono);font-size:.54rem;color:var(--dim)}
 .intel-spinner{font-size:1rem;color:var(--cyan);animation:spin 1.5s linear infinite;display:block;margin-bottom:7px}
 @keyframes spin{to{transform:rotate(360deg)}}
-
-/* OSINT */
-/* ═══ OSINT EVIDENCE LAYER v4.3 CSS ═══ */
-.ev-marker-wrap{position:relative;display:inline-block}
-.ev-badge{position:absolute;top:-8px;right:-8px;width:13px;height:13px;border-radius:50%;background:#9966ff;border:1px solid rgba(153,102,255,.5);display:flex;align-items:center;justify-content:center;font-size:.35rem;box-shadow:0 0 5px #9966ff88;animation:evGlow 2s ease-in-out infinite;z-index:2;pointer-events:none}
-@keyframes evGlow{0%,100%{box-shadow:0 0 4px #9966ff66}50%{box-shadow:0 0 9px #9966ffcc}}
-.ev-badge.video{background:#ff2233;border-color:rgba(255,34,51,.6)}
-.ev-badge.satellite{background:#00e5ff;border-color:rgba(0,229,255,.6)}
-.ev-badge.photo{background:#f5c518;border-color:rgba(245,197,24,.6)}
-.ev-hover-tip{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);width:160px;background:rgba(4,13,18,.97);border:1px solid #9966ff;z-index:2000;pointer-events:none;animation:tipIn .18s ease-out}
-@keyframes tipIn{from{opacity:0;transform:translateX(-50%) translateY(5px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
-.ev-tip-img{width:100%;height:90px;object-fit:cover;display:block}
-.ev-tip-bar{padding:4px 6px;border-top:1px solid #1a6688}
-.ev-tip-type{font-family:'Share Tech Mono',monospace;font-size:.38rem;letter-spacing:.08em;color:#9966ff}
-.ev-tip-src{font-family:'Share Tech Mono',monospace;font-size:.38rem;color:#4a7a99}
-.osint-toggle{padding:3px 8px;border:1px solid rgba(153,102,255,.4);cursor:pointer;color:rgba(153,102,255,.7);background:transparent;font-family:'Share Tech Mono',monospace;font-size:.46rem;letter-spacing:.06em;transition:all .15s;white-space:nowrap}
-.osint-toggle.on{border-color:#9966ff;color:#9966ff;background:rgba(153,102,255,.1);box-shadow:0 0 6px rgba(153,102,255,.25)}
-.osint-panel{border:1px solid rgba(153,102,255,.35);background:rgba(153,102,255,.04);margin-bottom:10px;overflow:hidden}
-.osint-panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-bottom:1px solid rgba(153,102,255,.25);background:rgba(153,102,255,.06)}
-.osint-panel-title{font-family:'Orbitron',sans-serif;font-size:.5rem;letter-spacing:.14em;color:#9966ff}
-.osint-src-badge{font-family:'Share Tech Mono',monospace;font-size:.42rem;color:#4a7a99}
-.osint-media{width:100%;background:#000;overflow:hidden}
-.osint-img{width:100%;max-height:200px;object-fit:cover;display:block;cursor:zoom-in}
-.osint-sat-img{width:100%;max-height:220px;object-fit:cover;display:block;filter:contrast(1.05) saturate(.9);cursor:zoom-in}
-.osint-vid-placeholder{width:100%;aspect-ratio:16/9;background:#000;position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center}
-.osint-vid-thumb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.65}
-.osint-play-wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.3)}
-.osint-play-btn{width:44px;height:44px;border-radius:50%;background:rgba(220,30,30,.88);display:flex;align-items:center;justify-content:center;font-size:1rem;box-shadow:0 2px 12px rgba(255,34,51,.5)}
-.osint-vid-frame{display:none;width:100%;aspect-ratio:16/9}
-.osint-vid-frame iframe{width:100%;height:100%;border:none;display:block}
-.osint-meta{padding:7px 10px}
-.osint-caption{font-family:'Rajdhani',sans-serif;font-size:.7rem;color:#c8e8f8;line-height:1.4;margin-bottom:4px}
-.osint-src-line{display:flex;align-items:center;gap:5px;font-family:'Share Tech Mono',monospace;font-size:.42rem;color:#4a7a99}
-.osint-ai-box{padding:8px 10px;border-top:1px solid rgba(153,102,255,.2);background:rgba(153,102,255,.04)}
-.osint-ai-lbl{font-family:'Orbitron',sans-serif;font-size:.44rem;letter-spacing:.1em;color:rgba(153,102,255,.85);margin-bottom:4px}
-.osint-ai-lbl::before{content:"◈ "}
-.osint-ai-txt{font-family:'Rajdhani',sans-serif;font-size:.7rem;color:#c8e8f8;line-height:1.65}
-.osint-warn{padding:5px 10px;background:rgba(245,197,24,.05);border-top:1px solid rgba(245,197,24,.2);font-family:'Share Tech Mono',monospace;font-size:.4rem;color:#f5c518}
-.osint-none{padding:12px 10px;font-family:'Share Tech Mono',monospace;font-size:.46rem;color:#2a4a5a;text-align:center}
-.fi-ev{font-size:.55rem;vertical-align:middle;margin-left:2px;opacity:.85}
-#zoom-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.93);z-index:9999;align-items:center;justify-content:center;cursor:zoom-out}
-#zoom-ov.show{display:flex}
-#zoom-ov img{max-width:90vw;max-height:90vh;object-fit:contain;border:1px solid #1a6688}
-#zoom-close{position:fixed;top:14px;right:18px;color:#4a7a99;font-size:1.4rem;cursor:pointer;z-index:10000;line-height:1}
-
-/* FORECAST */
-/* ═══════════════════════════════════════
-   FORECAST LAYER v4.3
-═══════════════════════════════════════ */
-
-/* ── Forecast panel in left sidebar ── */
-.fc72-panel { padding: 0 }
-.fc72-header { display:flex; align-items:center; justify-content:space-between; padding:4px 9px; border-bottom:1px solid var(--b0); background:rgba(153,102,255,.04); margin-bottom:4px }
-.fc72-title { font-family:var(--disp); font-size:.44rem; letter-spacing:.14em; color:#9966ff }
-.fc72-conf { font-family:var(--mono); font-size:.4rem; color:var(--muted) }
-
-.fc72-region { border:1px solid var(--b0); margin:3px 9px; padding:5px 7px; background:rgba(0,170,255,.02); cursor:default; transition:background .15s }
-.fc72-region:hover { background:rgba(0,170,255,.04) }
-.fc72-region-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:3px }
-.fc72-region-name { font-family:var(--mono); font-size:.46rem; color:var(--dim) }
-.fc72-region-prob { font-family:var(--disp); font-size:.82rem; font-weight:700; line-height:1 }
-.fc72-region-meta { display:flex; align-items:center; gap:5px }
-.fc72-trend { font-size:.75rem; line-height:1 }
-.fc72-label { font-family:var(--disp); font-size:.4rem; letter-spacing:.06em }
-.fc72-bar { height:3px; background:rgba(255,255,255,.06); border-radius:2px; overflow:hidden; margin-top:3px }
-.fc72-bar-fill { height:100%; border-radius:2px; transition:width 1s ease }
-
-/* Drivers block */
-.fc72-drivers { padding:4px 9px 6px; border-top:1px solid var(--b0); margin-top:4px }
-.fc72-drivers-hdr { font-family:var(--mono); font-size:.4rem; color:var(--muted); letter-spacing:.08em; margin-bottom:4px }
-.fc72-driver-row { display:flex; align-items:center; gap:5px; padding:2px 0; border-bottom:1px solid rgba(13,51,72,.2) }
-.fc72-driver-dot { width:4px; height:4px; border-radius:50%; flex-shrink:0 }
-.fc72-driver-txt { font-family:var(--mono); font-size:.44rem; color:var(--dim); flex:1 }
-.fc72-driver-cnt { font-family:var(--disp); font-size:.5rem; color:var(--muted) }
-
-/* Model info footer */
-.fc72-model { padding:4px 9px; border-top:1px solid var(--b0); display:flex; justify-content:space-between; font-family:var(--mono); font-size:.38rem; color:var(--muted) }
-.fc72-signals { color:var(--cyan) }
-
-/* ── Heatmap legend ── */
-.fc-legend { display:none; align-items:center; gap:7px; flex:1 }
-.fc-legend.vis { display:flex }
-.fc-leg-grad { width:80px; height:6px; border-radius:3px; background:linear-gradient(90deg,#00ff88,#f5c518,#ff6b1a,#ff2233); flex-shrink:0 }
-.fc-leg-labels { display:flex; justify-content:space-between; font-family:var(--mono); font-size:.38rem; width:80px; flex-shrink:0 }
-.fc-leg-sep { color:var(--muted); font-family:var(--mono); font-size:.42rem }
-
-/* ── Region risk circles on map ── */
-.fc-region-label { font-family:'Orbitron',sans-serif; font-size:.44rem; padding:3px 7px; border:1px solid; white-space:nowrap; background:rgba(2,6,8,.9) }
-
-/* ── Forecast mode banner ── */
-#fc-mode-banner { display:none; position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:800; background:rgba(4,13,18,.95); border:1px solid #9966ff; padding:4px 14px; font-family:'Share Tech Mono',monospace; font-size:.5rem; color:#9966ff; letter-spacing:.12em; pointer-events:none; white-space:nowrap }
-#fc-mode-banner.show { display:block }
-.fc-banner-pulse { animation:fcBlink 2s ease-in-out infinite }
-@keyframes fcBlink { 0%,100%{opacity:1}50%{opacity:.5} }
-
-/* ── Heatmap custom gradient ── */
-.leaflet-heatmap-layer { opacity:0.75 }
-
-/* ── FORECAST button ── */
-.layer-btn.al-forecast { border-color:#9966ff; color:#9966ff; background:rgba(153,102,255,.07) }
-
-
-#dbg-overlay{display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;
-  background:#ff000022;border-top:2px solid #ff2233;color:#ff6666;
-  font-family:monospace;font-size:11px;padding:8px;word-break:break-all;max-height:120px;overflow:auto;}
-#dbg-status{position:fixed;top:4px;right:200px;z-index:9999;
-  font-family:monospace;font-size:10px;color:#00ff88;background:#000;padding:2px 6px;}
 </style>
 </head>
 <body>
@@ -2103,7 +1996,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     <button class="layer-btn" onclick="setLayer('trade',this)">🚢 TRADE</button>
     <button class="layer-btn" onclick="setLayer('travel',this)">✈ TRAVEL</button>
     <button class="layer-btn" onclick="setLayer('alignment',this)">🌐 ALIGNMENT</button>
-    <button class="osint-toggle" id="osint-btn" onclick="toggleOsint(this)">🛰 OSINT</button>
+    <button id="osint-btn" onclick="toggleOsint(this)" style="font-family:var(--mono);font-size:.52rem;letter-spacing:.1em;padding:4px 10px;background:transparent;border:1px solid #2a4a5a;color:#4a7a99;cursor:pointer">🛰 OSINT</button>
     <button class="layer-btn" id="fc-btn" onclick="setLayer('forecast',this)">⚡ FORECAST</button>
   </div>
   <div class="hdr-right">
@@ -2196,35 +2089,25 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     </div>
   </div>
 
-  <!-- ESCALATION FORECAST 72H PANEL -->
+  <!-- FORECAST 72H -->
   <div class="sec" id="fc72-sec">
     <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')">
       <span class="sec-t" style="color:#9966ff">⚡ ESCALATION FORECAST · 72H</span>
-      <div style="display:flex;align-items:center;gap:4px">
-        <span id="fc72-conf-badge" style="font-family:var(--mono);font-size:.4rem;color:var(--muted)">—% conf</span>
-        <span class="arr">▾</span>
-      </div>
+      <span id="fc72-conf-badge" style="font-family:var(--mono);font-size:.4rem;color:var(--muted);margin-left:auto">— conf</span>
+      <span class="arr">▾</span>
     </div>
-    <div class="sec-body fc72-panel" style="padding:0">
-      <div class="fc72-header">
-        <span class="fc72-title">PREDICTIVE RISK MODEL</span>
-        <span class="fc72-conf" id="fc72-sigs">— signals</span>
+    <div class="sec-body" style="padding:4px">
+      <div style="font-family:var(--mono);font-size:.4rem;color:var(--muted);margin-bottom:4px" id="fc72-sigs">— signals · PREDICTIVE RISK MODEL</div>
+      <div id="fc72-regions"><div style="padding:6px;font-family:var(--mono);font-size:.46rem;color:var(--muted)">Loading forecast…</div></div>
+      <div style="margin-top:6px;border-top:1px solid var(--b0);padding-top:4px">
+        <div style="font-family:var(--mono);font-size:.38rem;color:var(--muted);margin-bottom:3px">FORECAST DRIVERS</div>
+        <div id="fc72-drivers-list" style="font-family:var(--mono);font-size:.4rem;color:#4a7a99">—</div>
       </div>
-      <div id="fc72-regions">
-        <!-- Populated by JS -->
-        <div style="padding:9px;font-family:var(--mono);font-size:.46rem;color:var(--muted)">Loading forecast…</div>
-      </div>
-      <div class="fc72-drivers" id="fc72-drivers-wrap">
-        <div class="fc72-drivers-hdr">FORECAST DRIVERS</div>
-        <div id="fc72-drivers-list">—</div>
-      </div>
-      <div class="fc72-model">
-        <span>MODEL: rate·0.4 + vel·0.3 + mil·0.2 + dip·0.1</span>
-        <span class="fc72-signals" id="fc72-conf-val">—%</span>
+      <div style="font-family:var(--mono);font-size:.36rem;color:#1a3a4a;margin-top:4px;border-top:1px solid #0d3348;padding-top:2px">
+        MODEL: rate·0.4 + vel·0.3 + mil·0.2 + dip·0.1 | CONF: <span id="fc72-conf-val">—</span>%
       </div>
     </div>
   </div>
-
 
   <!-- TREND CHART -->
   <div class="sec">
@@ -2297,7 +2180,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 
 <!-- ════ MAP CENTER ════ -->
 <div class="map-col">
-  <div id="fc-mode-banner"><span class="fc-banner-pulse">⚡ FORECAST MODE — PREDICTIVE RISK VISUALIZATION</span></div>
+  <div id="fc-mode-banner" style="display:none;background:linear-gradient(90deg,#0d0028,#1a0050,#0d0028);border-bottom:1px solid #9966ff;padding:4px 14px;font-family:var(--mono);font-size:.5rem;letter-spacing:.15em;color:#cc88ff;text-align:center">⚡ FORECAST MODE — PREDICTIVE RISK VISUALIZATION</div>
   <div id="wmap" style="flex:1;min-height:0"></div>
   <div class="map-footer">
     <!-- LIVE -->
@@ -2335,14 +2218,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
       <div class="ll-item" style="color:#f5c518">▪ AMBIGUOUS</div>
       <div class="ll-item" style="color:#4a7a99">▪ NEUTRAL</div>
     </div>
-        <div class="fc-legend" id="leg-forecast">
-      <div class="fc-leg-grad"></div>
-      <div style="display:flex;flex-direction:column;gap:1px">
-        <div class="fc-leg-labels"><span style="color:#00ff88">STABLE</span><span style="color:#f5c518">ELEVATED</span><span style="color:#ff6b1a">HIGH</span><span style="color:#ff2233">CRITICAL</span></div>
-        <div style="font-family:var(--mono);font-size:.38rem;color:var(--muted)">ESCALATION PROBABILITY 72H</div>
-      </div>
-    </div>
-    <span style="margin-left:auto;color:var(--muted);font-family:var(--mono);font-size:.42rem" id="map-src">—</span>
+    <div id="leg-forecast" style="display:none;display:flex;align-items:center;gap:6px;margin-right:8px"><div style="width:80px;height:6px;background:linear-gradient(90deg,#00ff88,#f5c518,#ff6b1a,#ff2233);border-radius:2px"></div><span style="font-family:var(--mono);font-size:.38rem;color:var(--muted)">STABLE→CRITICAL</span></div><span style="margin-left:auto;color:var(--muted);font-family:var(--mono);font-size:.42rem" id="map-src">—</span>
   </div>
   <!-- REPLAY BAR -->
   <div class="rep-bar">
@@ -2624,7 +2500,7 @@ function renderAlignLayer(conflict){
   alignLayer.clearLayers();
   const data=alignData[conflict];
   if(!data||!data.countries)return;
-  Object.entries(data.countries||{}).forEach(([country,info])=>{
+  Object.entries(data.countries).forEach(([country,info])=>{
     const c=stanceColor(info.stance);
     const trends=alignTrends[conflict]||{};
     const tr=trends[country];
@@ -2792,7 +2668,7 @@ function renderAlignmentPanel(conflict){
   if(selEl){selEl.innerHTML=Object.keys(alignData).map(k=>`<button class="align-conf-btn${k===conflict?' active':''}" onclick="selectAlignConflict('${k}')">${(alignData[k].conflict||k).slice(0,12).toUpperCase()}</button>`).join('')}
   const el=document.getElementById('align-list');if(!el)return;
   const trends=alignTrends[conflict]||{};
-  const sorted=Object.entries(data.countries||{}).sort((a,b)=>{const o={supporting_A:0,supporting_B:1,ambiguous:2,neutral:3};return(o[a[1].stance]||3)-(o[b[1].stance]||3)});
+  const sorted=Object.entries(data.countries).sort((a,b)=>{const o={supporting_A:0,supporting_B:1,ambiguous:2,neutral:3};return(o[a[1].stance]||3)-(o[b[1].stance]||3)});
   el.innerHTML=`<div>${sorted.map(([country,info])=>{
     const c=stanceColor(info.stance);
     const tr=trends[country];
@@ -2889,7 +2765,7 @@ function renderSummary(data){
 }
 function renderTravelPanel(data){
   const el=document.getElementById('travel-list');if(!el)return;
-  const sorted=Object.entries(data||{}).sort((a,b)=>{const ord={CRITICAL:0,HIGH:1,MODERATE:2,LOW:3};return(ord[a[1].risk]||3)-(ord[b[1].risk]||3)});
+  const sorted=Object.entries(data).sort((a,b)=>{const ord={CRITICAL:0,HIGH:1,MODERATE:2,LOW:3};return(ord[a[1].risk]||3)-(ord[b[1].risk]||3)});
   el.innerHTML=sorted.map(([country,d])=>`<div class="travel-row" title="${d.reason}"><span class="travel-country">${country}</span><span class="travel-risk risk-${d.risk}">${d.risk}</span></div>`).join('');
 }
 
@@ -2959,32 +2835,24 @@ function setLang(lang){document.documentElement.setAttribute('lang',lang);docume
 async function loadAll(){
   refreshCountdown=600;
   try{
-    // Individual fetches - one failure cannot block others
-    const _f = async (url, fallback) => {
-      for(let attempt=0; attempt<3; attempt++){
-        try{ return await fetch(url).then(r=>{ if(!r.ok)throw new Error(r.status); return r.json(); }); }
-        catch(e){ if(attempt===2) return fallback; await new Promise(r=>setTimeout(r,600)); }
-      }
-      return fallback;
-    };
     const [sr,er,tr,fc,reg,strat,sup,al,act,conflicts,trade,travel,alignU,alignG,snap,chkTraffic,alignTr]=await Promise.all([
-      _f('/api/status',{}),
-      _f('/api/events-v4',{events:[]}),
-      _f('/api/trend',{trend:[]}),
-      _f('/api/forecast',{}),
-      _f('/api/regional',{regional:{}}),
-      _f('/api/strategic',{}),
-      _f('/api/supply-chain',{}),
-      _f('/api/alerts',{alerts:[]}),
-      _f('/api/activity',{}),
-      _f('/api/conflicts',{conflicts:[]}),
-      _f('/api/trade',{routes:[],sectors:{}}),
-      _f('/api/travel-safety',{travel:{}}),
-      _f('/api/alignment?conflict=ukraine_war',{}),
-      _f('/api/alignment?conflict=gaza_conflict',{}),
-      _f('/api/snapshot',{}),
-      _f('/api/chokepoints-traffic',{chokepoints:{}}),
-      _f('/api/alignment-trends',{trends:{}}),
+      fetch('/api/status').then(r=>r.json()).catch(()=>({})),
+      fetch('/api/events-v4').then(r=>r.json()).catch(()=>({events:[]})),
+      fetch('/api/trend').then(r=>r.json()).catch(()=>({trend:[]})),
+      fetch('/api/forecast').then(r=>r.json()).catch(()=>({})),
+      fetch('/api/regional').then(r=>r.json()).catch(()=>({regional:{}})),
+      fetch('/api/strategic').then(r=>r.json()).catch(()=>({})),
+      fetch('/api/supply-chain').then(r=>r.json()).catch(()=>({})),
+      fetch('/api/alerts').then(r=>r.json()).catch(()=>({alerts:[]})),
+      fetch('/api/activity').then(r=>r.json()).catch(()=>({})),
+      fetch('/api/conflicts').then(r=>r.json()).catch(()=>({conflicts:[]})),
+      fetch('/api/trade').then(r=>r.json()).catch(()=>({routes:[],sectors:{}})),
+      fetch('/api/travel-safety').then(r=>r.json()).catch(()=>({travel:{}})),
+      fetch('/api/alignment?conflict=ukraine_war').then(r=>r.json()).catch(()=>({})),
+      fetch('/api/alignment?conflict=gaza_conflict').then(r=>r.json()).catch(()=>({})),
+      fetch('/api/snapshot').then(r=>r.json()).catch(()=>({})),
+      fetch('/api/chokepoints-traffic').then(r=>r.json()).catch(()=>({chokepoints:{}})),
+      fetch('/api/alignment-trends').then(r=>r.json()).catch(()=>({trends:{}})),
     ]);
 
     allEvents=er.events||[];
@@ -2994,39 +2862,29 @@ async function loadAll(){
     if(alignG.alignment)alignData['gaza_conflict']=alignG.alignment;
     if(alignTr.trends)alignTrends=alignTr.trends;
 
-    const _safe = (label, fn) => {
-      try { fn(); }
-      catch(e) {
-        console.warn('[Render]', label, e.message);
-        const _dbg=document.getElementById('dbg-overlay');
-        if(_dbg){_dbg.style.display='block';_dbg.innerHTML+=('<br><b>'+label+'</b>: '+e.message);}
-      }
-    };
-    const _st=document.getElementById('dbg-status');if(_st)_st.textContent='JS: RUNNING';
-    _safe('GTI',          ()=>renderGTI(sr));
-    _safe('Chart',        ()=>renderChart(tr.trend||[]));
-    _safe('Map',          ()=>renderMap(allEvents));
-    _safe('Feed',         ()=>renderFeed(allEvents));
-    _safe('Forecast',     ()=>renderForecast(fc, act.events_detected_24h||0));
-    _safe('Regional',     ()=>renderRegional(reg.regional||{}));
-    _safe('Strategic',    ()=>renderStrategic(strat||{}));
-    _safe('Supply',       ()=>renderSupply(sup||{}));
-    _safe('Alerts',       ()=>renderAlerts(al.alerts||[]));
-    _safe('Activity',     ()=>renderActivity(act||{}));
-    _safe('Conflicts',    ()=>renderConflicts(conflicts.conflicts||[]));
-    _safe('ConflictLayer',()=>renderConflictLayer(conflicts.conflicts||[]));
-    _safe('Trade',        ()=>renderTradePanels(trade||{}));
-    _safe('TradeLayer',   ()=>renderTradeLayer(trade.routes||[], chkTraffic.chokepoints||{}));
-    _safe('Travel',       ()=>renderTravelPanel(travelData||{}));
-    _safe('TravelLayer',  ()=>renderTravelLayer(travelData||{}));
-    _safe('Transparency', ()=>renderTransparency(act||{},sr||{}));
-    _safe('Snapshot',     ()=>renderSnapshot(snap||{}));
-    _safe('Choke',        ()=>renderChokeTraffic(chkTraffic.chokepoints||{}));
-    _safe('Alignment',    ()=>renderAlignmentPanel('ukraine_war'));
+    renderGTI(sr);
+    renderChart(tr.trend||[]);
+    renderMap(allEvents);
+    renderFeed(allEvents);
+    renderForecast(fc, act.events_detected_24h);
+    renderRegional(reg.regional||{});
+    renderStrategic(strat);
+    renderSupply(sup);
+    renderAlerts(al.alerts||[]);
+    renderActivity(act);
+    renderConflicts(conflicts.conflicts||[]);
+    renderConflictLayer(conflicts.conflicts||[]);
+    renderTradePanels(trade);
+    renderTradeLayer(trade.routes||[], chkTraffic.chokepoints||{});
+    renderTravelPanel(travelData);
+    renderTravelLayer(travelData);
+    renderTransparency(act,sr);
+    renderSnapshot(snap);
+    renderChokeTraffic(chkTraffic.chokepoints||{});
+    renderAlignmentPanel('ukraine_war');
 
     const ms=document.getElementById('map-src');
     if(ms)ms.textContent=`${er.count||0} INCIDENTS · ${new Date().toUTCString().slice(17,25)} UTC`;
-    const _st2=document.getElementById('dbg-status');if(_st2)_st2.textContent='DATA: OK ✓ '+er.count+' events';
 
     // Async: AI summary + daily briefing
     const se=document.getElementById('ai-sum');if(se){se.classList.add('typing');se.textContent='Analyzing…'}
@@ -3038,33 +2896,13 @@ async function loadAll(){
     await loadRepHistory();
     setLayer(currentLayer, document.querySelector('.layer-btn.al, .layer-btn.al-conflict, .layer-btn.al-trade, .layer-btn.al-travel, .layer-btn.al-align'));
 
-  }catch(err){
-    console.error('[LoadAll]',err);
-    const _dbg=document.getElementById('dbg-overlay');
-    if(_dbg){_dbg.style.display='block';_dbg.innerHTML='<b>LOAD ERROR</b>: '+err.message+'<br>'+err.stack.split('\n').slice(0,4).join('<br>');}
-  }
+  }catch(err){console.error('[LoadAll]',err)}
 }
 
 // ════════════ BOOT ════════════
 document.addEventListener('DOMContentLoaded',()=>{
   initMap();
   loadAll();
-  // Auto-retry with escalating delays
-  const _retry = async (attempt) => {
-    try {
-      const r = await fetch('/api/events-v4').then(x=>x.json());
-      if(!r.count || r.count===0){ 
-        const el=document.getElementById('data-status');
-        if(el)el.textContent='DATA: RETRYING…';
-        if(attempt<4) setTimeout(()=>_retry(attempt+1), 2000*(attempt+1));
-        else loadAll();
-      } else {
-        const el=document.getElementById('data-status');
-        if(el)el.textContent='DATA: ●LIVE';
-      }
-    } catch(e){ if(attempt<3) setTimeout(()=>_retry(attempt+1), 3000); }
-  };
-  setTimeout(()=>_retry(0), 3000);
   function fixH(){
     const w=document.getElementById('wmap'),shell=document.querySelector('.shell'),rb=document.querySelector('.rep-bar'),mf=document.querySelector('.map-footer');
     if(w&&shell&&rb&&mf){const h=shell.clientHeight-rb.offsetHeight-mf.offsetHeight;w.style.height=Math.max(200,h)+'px';if(leafMap)leafMap.invalidateSize()}
@@ -3072,363 +2910,209 @@ document.addEventListener('DOMContentLoaded',()=>{
   fixH();window.addEventListener('resize',fixH);setTimeout(fixH,500);
 });
 
-// === v4.3 EXTENSION ===
+
+// === GTM v4.3 EXTENSION ===
 
 // ═══════════════════════════════════════════════════════════════
-// GTM v4.3 EXTENSION MODULE
-// OSINT + FORECAST - no function redefinitions, no override chains
-// All patches use object/variable assignment, not function declarations
+// GTM v4.3 EXTENSION — OSINT + FORECAST
+// Loaded AFTER all base v4.1 code.
+// Does NOT modify any existing function.
+// Adds new standalone functions and hooks in via DOMContentLoaded.
 // ═══════════════════════════════════════════════════════════════
 
-// ── OSINT state ─────────────────────────────────────────────────
-let osintIdx = {};
-let osintOn  = false;
-let hovTimer = null;
+// ── State ────────────────────────────────────────────────────────
+var osintOn = false;
+var osintIdx = {};
+var isForecastMode = false;
+var forecastLayer = null;
+var heatLayer = null;
+var fcData = null;
 
-// ── FORECAST state ───────────────────────────────────────────────
-let forecastLayer = null;
-let heatLayer     = null;
-let fcData        = null;
-let isForecastMode = false;
-
-// ════════════════════════════════════════════════════════════════
-// OSINT FUNCTIONS
-// ════════════════════════════════════════════════════════════════
+// ── OSINT ─────────────────────────────────────────────────────────
 
 function toggleOsint(btn) {
     osintOn = !osintOn;
-    btn.classList.toggle('on', osintOn);
-    buildOsintBadges();
+    if (btn) {
+        btn.style.borderColor = osintOn ? '#00e5ff' : '#2a4a5a';
+        btn.style.color = osintOn ? '#00e5ff' : '#4a7a99';
+    }
+    if (osintOn) loadOsintIdx();
 }
 
 async function loadOsintIdx() {
     try {
-        const r = await fetch('/api/osint-index').then(x => x.json());
+        var r = await fetch('/api/osint-index').then(function(x){ return x.json(); });
         osintIdx = {};
-        (r.evidence_available || []).forEach(e => { osintIdx[e.id] = e; });
-    } catch(e) { console.warn('[OSINT] index failed'); }
-}
-
-function buildOsintBadges() {
-    document.querySelectorAll('.ev-badge').forEach(el => el.remove());
-    document.querySelectorAll('.ev-marker-wrap').forEach(el => {
-        el.className = el.className.replace('ev-marker-wrap', 'just-wrap');
-    });
-    if (!osintOn || !leafMap) return;
-    leafMap.eachLayer(layer => {
-        if (!layer._latlng || !layer._icon) return;
-        const ev = (allEvents || []).find(e =>
-            Math.abs(e.lat - layer._latlng.lat) < 0.5 &&
-            Math.abs(e.lon - layer._latlng.lng) < 0.5);
-        if (!ev || !osintIdx[ev.id]) return;
-        const meta = osintIdx[ev.id];
-        const wrap = layer._icon.querySelector('.just-wrap, .ev-marker-wrap');
-        if (!wrap) return;
-        wrap.className = 'ev-marker-wrap';
-        const badge = document.createElement('div');
-        badge.className = 'ev-badge ' + (meta.type || 'photo');
-        badge.textContent = meta.type === 'video' ? '▶' : meta.type === 'satellite' ? '🛰' : '📷';
-        wrap.appendChild(badge);
-    });
+        (r.evidence_available || []).forEach(function(e){ osintIdx[e.id] = e; });
+    } catch(e) {}
 }
 
 function osintZoom(src) {
-    let ov = document.getElementById('zoom-ov');
-    if (ov) { ov.querySelector('img').src = src; ov.classList.add('show'); }
-}
-function osintZoomClose() {
-    const ov = document.getElementById('zoom-ov');
-    if (ov) ov.classList.remove('show');
-}
-function osintPlayVideo(url) {
-    const ph = document.getElementById('osint-vid-ph');
-    const fw = document.getElementById('osint-vid-fw');
-    if (!ph || !fw) return;
-    ph.style.display = 'none'; fw.style.display = 'block';
-    fw.innerHTML = '<iframe src="' + url + '&autoplay=1" allow="autoplay;encrypted-media" allowfullscreen style="width:100%;height:100%;border:none"></iframe>';
+    var ov = document.getElementById('zoom-ov');
+    if (!ov) return;
+    ov.querySelector('img').src = src;
+    ov.classList.add('show');
 }
 
-function buildOsintSection(osintData) {
-    if (!osintData || !osintData.has_evidence || !osintData.evidence) {
-        const conf = osintData && osintData.confidence;
-        const msg = conf && conf < 85
-            ? 'Confidence ' + conf + '% below 85% threshold'
-            : 'No visual evidence indexed for this event type';
-        return '<div class="osint-panel"><div class="osint-none">🛰 ' + msg + '</div></div>';
-    }
-    const evd = osintData.evidence;
-    const si = evd.source_icon || '🔍';
-    let mediaHTML = '';
-    if (evd.type === 'video' && evd.embed_url) {
-        const th = evd.thumbnail || '';
-        mediaHTML = '<div class="osint-media">'
-            + '<div class="osint-vid-placeholder" id="osint-vid-ph" onclick="osintPlayVideo(\'' + evd.embed_url + '\')">'
-            + (th ? '<img class="osint-vid-thumb" src="' + th + '" onerror="this.remove()">' : '')
-            + '<div class="osint-play-wrap"><div class="osint-play-btn">▶</div></div>'
-            + '</div><div class="osint-vid-frame" id="osint-vid-fw"></div></div>';
-    } else {
-        const src = evd.image_url || evd.thumbnail || '';
-        const cls = evd.type === 'satellite' ? 'osint-sat-img' : 'osint-img';
-        mediaHTML = '<div class="osint-media"><img class="' + cls + '" src="' + src
-            + '" onclick="osintZoom(\'' + src + '\')" onerror="this.parentNode.style.display=\'none\'"></div>';
-    }
-    return '<div class="osint-panel">'
-        + '<div class="osint-panel-hdr"><span class="osint-panel-title">🛰 EVENT EVIDENCE</span>'
-        + '<span class="osint-src-badge">' + si + ' ' + (evd.source || '—') + '</span></div>'
-        + mediaHTML
-        + '<div class="osint-meta"><div class="osint-caption">' + (evd.caption || '—') + '</div>'
-        + '<div class="osint-src-line"><span>' + si + '</span><span>' + (evd.source || '—') + '</span>'
-        + '<span style="margin-left:auto;color:#00e5ff;font-size:.42rem">'
-        + (evd.source_type || '').replace(/_/g, ' ').toUpperCase() + '</span></div></div>'
-        + '<div class="osint-ai-box"><div class="osint-ai-lbl">IMAGERY ANALYSIS</div>'
-        + '<div class="osint-ai-txt">' + (evd.ai_analysis || evd.ai_brief || 'Analysis pending.') + '</div></div>'
-        + '<div class="osint-warn">⚠ Evidence matched by region/type. Verify with primary sources.</div>'
-        + '</div>';
-}
+// ── FORECAST ─────────────────────────────────────────────────────
 
-// ════════════════════════════════════════════════════════════════
-// FORECAST FUNCTIONS
-// ════════════════════════════════════════════════════════════════
-
-function fcColor(prob) {
-    return prob >= 0.72 ? '#ff2233' : prob >= 0.50 ? '#ff6b1a' : prob >= 0.30 ? '#f5c518' : '#00ff88';
-}
-
-function initForecastLayer() {
-    if (!leafMap || forecastLayer) return;
-    forecastLayer = L.layerGroup();
-}
-
-function loadHeatPlugin(cb) {
-    if (window.L && L.heatLayer) { cb(); return; }
-    if (document.querySelector('[data-heat]')) { setTimeout(cb, 500); return; }
-    const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js';
-    s.setAttribute('data-heat', '1');
-    s.onload = cb;
-    s.onerror = cb;
-    document.head.appendChild(s);
+function fcColor(p) {
+    return p >= 0.72 ? '#ff2233' : p >= 0.50 ? '#ff6b1a' : p >= 0.30 ? '#f5c518' : '#00ff88';
 }
 
 function activateForecastMode() {
     isForecastMode = true;
-    if (!leafMap) return;
-    [mLayer, clusterLayer, conflictLayer, tradeLayer, travelLayer, alignLayer].forEach(l => {
-        if (l && leafMap.hasLayer(l)) leafMap.removeLayer(l);
-    });
-    const banner = document.getElementById('fc-mode-banner');
-    if (banner) banner.classList.add('show');
-    document.querySelectorAll('.layer-legend').forEach(el => el.classList.remove('vis'));
-    const fcLeg = document.getElementById('leg-forecast');
-    if (fcLeg) fcLeg.classList.add('vis');
-    loadHeatPlugin(() => renderForecastMap(fcData));
+    var banner = document.getElementById('fc-mode-banner');
+    if (banner) banner.style.display = 'block';
+    var leg = document.getElementById('leg-forecast');
+    if (leg) leg.style.display = 'flex';
+    // Hide regular layers
+    if (typeof leafMap !== 'undefined' && leafMap) {
+        [mLayer, clusterLayer].forEach(function(l){
+            if (l && leafMap.hasLayer(l)) leafMap.removeLayer(l);
+        });
+    }
+    if (forecastLayer && typeof leafMap !== 'undefined' && leafMap) {
+        leafMap.addLayer(forecastLayer);
+    }
+    if (fcData) renderForecastMap(fcData);
 }
 
 function deactivateForecastMode() {
     isForecastMode = false;
-    if (!leafMap) return;
-    if (heatLayer && leafMap.hasLayer(heatLayer)) leafMap.removeLayer(heatLayer);
-    if (forecastLayer && leafMap.hasLayer(forecastLayer)) leafMap.removeLayer(forecastLayer);
-    const banner = document.getElementById('fc-mode-banner');
-    if (banner) banner.classList.remove('show');
-}
-
-function renderForecastMap(data) {
-    if (!leafMap || !data) return;
-    if (!forecastLayer) initForecastLayer();
-    if (heatLayer && leafMap.hasLayer(heatLayer)) leafMap.removeLayer(heatLayer);
-    forecastLayer.clearLayers();
-
-    const REGION_CENTERS = {
-        'Middle East':    [31.5, 35.5], 'Eastern Europe': [49.5, 32.0],
-        'East Asia':      [24.5, 121.0], 'Horn of Africa':  [12.5, 43.5],
-        'West Africa':    [13.0, 2.0],  'Mediterranean':   [35.5, 19.0],
-        'South Asia':     [30.0, 70.0], 'Central Asia':    [41.0, 63.0],
-    };
-
-    const points = data.heatmap_points || [];
-    const forecasts = data.forecasts || {};
-
-    if (window.L && L.heatLayer && points.length) {
-        heatLayer = L.heatLayer(points, {
-            radius: 55, blur: 38, maxZoom: 8, max: 0.95,
-            gradient: {0.0:'#001a00',0.28:'#006600',0.45:'#00aa00',0.58:'#f5c518',0.72:'#ff6b1a',0.88:'#ff2233',1.0:'#8b0000'}
-        });
-        leafMap.addLayer(heatLayer);
-    } else {
-        // Fallback circles
-        points.forEach(pt => {
-            L.circle([pt[0], pt[1]], {
-                radius: 180000, color: 'transparent',
-                fillColor: fcColor(pt[2]), fillOpacity: 0.18 + pt[2] * 0.22, interactive: false
-            }).addTo(forecastLayer);
-        });
+    var banner = document.getElementById('fc-mode-banner');
+    if (banner) banner.style.display = 'none';
+    var leg = document.getElementById('leg-forecast');
+    if (leg) leg.style.display = 'none';
+    if (forecastLayer && typeof leafMap !== 'undefined' && leafMap && leafMap.hasLayer(forecastLayer)) {
+        leafMap.removeLayer(forecastLayer);
     }
-
-    Object.entries(forecasts).forEach(([rname, fr]) => {
-        const center = REGION_CENTERS[rname];
-        if (!center) return;
-        const col = fr.color || fcColor(fr.probability || 0);
-        const pct = fr.probability_pct + '%';
-        const arrow = fr.trend_arrow || '→';
-
-        L.circle(center, {
-            radius: fr.probability > 0.5 ? 240000 : 180000,
-            color: col, weight: fr.probability > 0.65 ? 2 : 1,
-            opacity: 0.6, fillOpacity: 0, dashArray: fr.probability > 0.65 ? null : '6,4'
-        }).bindPopup(buildFcPopup(rname, fr)).addTo(forecastLayer);
-
-        const icon = L.divIcon({
-            className: '',
-            html: '<div class="fc-region-label" style="border-color:' + col + ';color:' + col + '">'
-                + '<span style="font-family:var(--disp);font-size:.52rem;font-weight:700">' + pct + '</span>'
-                + '<span style="margin-left:4px;font-size:.6rem">' + arrow + '</span><br>'
-                + '<span style="font-size:.38rem;opacity:.8">' + rname + '</span></div>',
-            iconAnchor: [0, 0], iconSize: null,
-        });
-        L.marker(center, {icon}).bindPopup(buildFcPopup(rname, fr)).addTo(forecastLayer);
-    });
-
-    leafMap.addLayer(forecastLayer);
-}
-
-function buildFcPopup(rname, fr) {
-    const col = fr.color || '#f5c518';
-    const drivers = (fr.drivers || []).map(d =>
-        '<div style="font-size:.5rem;color:#4a7a99;padding:1px 0">· ' + d.signal + (d.count ? ' (' + d.count + ')' : '') + '</div>'
-    ).join('');
-    return '<div style="font-family:Orbitron,sans-serif;font-size:.55rem;letter-spacing:.12em;color:' + col + ';margin-bottom:4px">'
-        + rname.toUpperCase() + '</div>'
-        + '<div style="font-family:var(--disp);font-size:1.1rem;font-weight:900;color:' + col + ';margin:2px 0">'
-        + fr.probability_pct + '% <span style="font-size:.7rem">' + (fr.trend_arrow || '→') + '</span></div>'
-        + '<div style="font-family:var(--disp);font-size:.44rem;padding:1px 5px;border:1px solid ' + col + ';color:' + col + ';display:inline-block;margin-bottom:5px">' + (fr.label || '') + '</div>'
-        + '<div style="font-size:.46rem;color:#4a7a99;margin-bottom:3px">FORECAST DRIVERS:</div>' + drivers
-        + '<div style="font-size:.4rem;color:#2a4a5a;margin-top:5px;border-top:1px solid #0d3348;padding-top:3px">72H ESCALATION PROBABILITY · MODEL v4.3</div>';
 }
 
 function renderForecastPanel(data) {
     if (!data) return;
     fcData = data;
-    const confBadge = document.getElementById('fc72-conf-badge');
-    if (confBadge) confBadge.textContent = data.confidence + '% conf';
-    const confVal = document.getElementById('fc72-conf-val');
-    if (confVal) confVal.textContent = data.confidence + '%';
-    const sigsEl = document.getElementById('fc72-sigs');
-    if (sigsEl) sigsEl.textContent = (data.signals_analyzed || 0) + ' signals';
 
-    const panelRegions = data.panel_regions || ['Middle East','Eastern Europe','East Asia','Horn of Africa','West Africa'];
-    const regEl = document.getElementById('fc72-regions');
+    var confBadge = document.getElementById('fc72-conf-badge');
+    if (confBadge) confBadge.textContent = (data.confidence || 0) + '% conf';
+    var confVal = document.getElementById('fc72-conf-val');
+    if (confVal) confVal.textContent = data.confidence || 0;
+    var sigsEl = document.getElementById('fc72-sigs');
+    if (sigsEl) sigsEl.textContent = (data.signals_analyzed || 0) + ' signals · PREDICTIVE RISK MODEL';
+
+    var panelRegions = data.panel_regions || ['Middle East','Eastern Europe','East Asia','Horn of Africa','West Africa'];
+    var regEl = document.getElementById('fc72-regions');
     if (regEl) {
-        regEl.innerHTML = panelRegions.map(rname => {
-            const fr = (data.forecasts || {})[rname]; if (!fr) return '';
-            const col = fr.color || '#f5c518';
-            const trendCol = fr.trend_dir === 'escalating' ? '#ff2233' : fr.trend_dir === 'decreasing' ? '#00ff88' : '#4a7a99';
-            return '<div class="fc72-region">'
-                + '<div class="fc72-region-top"><span class="fc72-region-name">' + rname + '</span>'
-                + '<div class="fc72-region-meta">'
-                + '<span class="fc72-trend" style="color:' + trendCol + '">' + (fr.trend_arrow || '→') + '</span>'
-                + '<span class="fc72-region-prob" style="color:' + col + '">' + fr.probability_pct + '%</span>'
-                + '</div></div>'
-                + '<div class="fc72-label" style="color:' + col + '">' + (fr.label || '') + '</div>'
-                + '<div class="fc72-bar"><div class="fc72-bar-fill" style="width:' + Math.round(fr.probability * 100) + '%;background:' + col + '"></div></div>'
+        regEl.innerHTML = panelRegions.map(function(rname) {
+            var fr = (data.forecasts || {})[rname];
+            if (!fr) return '';
+            var col = fr.color || '#f5c518';
+            var tCol = fr.trend_dir === 'escalating' ? '#ff2233' : fr.trend_dir === 'decreasing' ? '#00ff88' : '#4a7a99';
+            var pct = Math.round((fr.probability || 0) * 100);
+            return '<div style="margin-bottom:5px">'
+                + '<div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:.44rem;margin-bottom:1px">'
+                + '<span style="color:var(--txt)">' + rname + '</span>'
+                + '<span style="color:' + col + '">' + (fr.trend_arrow || '→') + ' ' + fr.probability_pct + '%</span></div>'
+                + '<div style="height:3px;background:#0d2030;border-radius:2px">'
+                + '<div style="height:3px;width:' + pct + '%;background:' + col + ';border-radius:2px;transition:width .5s"></div></div>'
+                + '<div style="font-family:var(--mono);font-size:.38rem;color:' + col + '">' + (fr.label || '') + '</div>'
                 + '</div>';
         }).join('');
     }
 
-    const allDrivers = {};
-    Object.values(data.forecasts || {}).forEach(fr => {
-        (fr.drivers || []).forEach(d => { allDrivers[d.signal] = (allDrivers[d.signal] || 0) + (d.count || 1); });
+    var allDrivers = {};
+    Object.values(data.forecasts || {}).forEach(function(fr) {
+        (fr.drivers || []).forEach(function(d) {
+            allDrivers[d.signal] = (allDrivers[d.signal] || 0) + (d.count || 1);
+        });
     });
-    const topDrivers = Object.entries(allDrivers).sort((a,b) => b[1]-a[1]).slice(0, 6);
-    const drivEl = document.getElementById('fc72-drivers-list');
-    const driverColors = ['#ff2233','#ff6b1a','#f5c518','#aaaaff','#4a7a99','#2a4a5a'];
-    if (drivEl) {
-        drivEl.innerHTML = topDrivers.length
-            ? topDrivers.map(([sig,cnt],i) =>
-                '<div class="fc72-driver-row"><div class="fc72-driver-dot" style="background:' + (driverColors[i]||'#2a4a5a') + '"></div>'
-                + '<span class="fc72-driver-txt">' + sig + '</span>'
-                + '<span class="fc72-driver-cnt">' + cnt + '</span></div>').join('')
-            : '<div class="fc72-driver-row"><span class="fc72-driver-txt" style="color:var(--muted)">Baseline monitoring active</span></div>';
+    var topDrivers = Object.entries(allDrivers).sort(function(a,b){ return b[1]-a[1]; }).slice(0,5);
+    var dEl = document.getElementById('fc72-drivers-list');
+    if (dEl) {
+        dEl.innerHTML = topDrivers.length
+            ? topDrivers.map(function(d){ return '<div>· ' + d[0] + ' <span style="color:#00e5ff">(' + d[1] + ')</span></div>'; }).join('')
+            : '<div style="color:var(--muted)">Baseline monitoring</div>';
     }
-    if (isForecastMode) loadHeatPlugin(() => renderForecastMap(data));
+
+    if (isForecastMode) renderForecastMap(data);
 }
 
-// ════════════════════════════════════════════════════════════════
-// PATCHED setLayer — handles 'forecast' mode
-// Uses variable assignment so it doesn't conflict with hoisting
-// ════════════════════════════════════════════════════════════════
-const _setLayerOrig = setLayer;
+function renderForecastMap(data) {
+    if (!data || !leafMap) return;
+    if (!forecastLayer) forecastLayer = L.layerGroup();
+    forecastLayer.clearLayers();
+
+    var CENTERS = {
+        'Middle East': [31.5, 35.5], 'Eastern Europe': [49.5, 32.0],
+        'East Asia': [24.5, 121.0], 'Horn of Africa': [12.5, 43.5],
+        'West Africa': [13.0, 2.0], 'Mediterranean': [35.5, 19.0],
+        'South Asia': [30.0, 70.0], 'Central Asia': [41.0, 63.0]
+    };
+
+    Object.entries(data.forecasts || {}).forEach(function(entry) {
+        var rname = entry[0], fr = entry[1];
+        var center = CENTERS[rname];
+        if (!center) return;
+        var col = fr.color || fcColor(fr.probability || 0);
+        var prob = fr.probability || 0;
+
+        L.circle(center, {
+            radius: prob > 0.5 ? 240000 : 180000,
+            color: col, weight: prob > 0.65 ? 2 : 1,
+            opacity: 0.7, fillOpacity: prob * 0.25,
+            fillColor: col
+        }).bindPopup(
+            '<div style="font-family:Orbitron,sans-serif;font-size:.55rem;color:' + col + '">' + rname.toUpperCase() + '</div>'
+            + '<div style="font-size:1.2rem;font-weight:900;color:' + col + '">' + fr.probability_pct + '% ' + (fr.trend_arrow||'→') + '</div>'
+            + '<div style="font-size:.44rem;border:1px solid ' + col + ';color:' + col + ';padding:1px 4px;display:inline-block;margin:3px 0">' + (fr.label||'') + '</div>'
+        ).addTo(forecastLayer);
+
+        var icon = L.divIcon({
+            className: '',
+            html: '<div style="font-family:var(--mono);font-size:.48rem;color:' + col + ';background:rgba(0,0,0,.7);border:1px solid ' + col + ';padding:2px 4px;white-space:nowrap">'
+                + fr.probability_pct + '% ' + (fr.trend_arrow||'→') + '</div>',
+            iconAnchor: [20, 0]
+        });
+        L.marker(center, {icon: icon}).addTo(forecastLayer);
+    });
+
+    if (!leafMap.hasLayer(forecastLayer)) leafMap.addLayer(forecastLayer);
+}
+
+// ── Hook into setLayer for forecast mode ──────────────────────────
+// Save original setLayer reference
+var _setLayerV41 = setLayer;
 setLayer = function(name, btn) {
     if (name === 'forecast') {
         currentLayer = 'forecast';
-        document.querySelectorAll('.layer-btn').forEach(b => b.className = 'layer-btn');
+        document.querySelectorAll('.layer-btn').forEach(function(b){ b.className = 'layer-btn'; });
         if (btn) btn.className = 'layer-btn al-forecast';
-        activateForecastMode();
+        if (!isForecastMode) activateForecastMode();
         return;
     }
     if (isForecastMode) deactivateForecastMode();
-    _setLayerOrig(name, btn);
+    _setLayerV41(name, btn);
 };
 
-// ════════════════════════════════════════════════════════════════
-// PATCHED openIntel — prepends OSINT section
-// ════════════════════════════════════════════════════════════════
-const _openIntelOrig = openIntel;
-openIntel = async function(eid) {
-    await _openIntelOrig(eid);
-    const body = document.getElementById('intel-body');
-    if (!body) return;
-    let osintData = { has_evidence: false };
-    try { osintData = await fetch('/api/osint/' + eid).then(r => r.json()); } catch(e) {}
-    const tmp = document.createElement('div');
-    tmp.innerHTML = buildOsintSection(osintData);
-    if (tmp.firstChild) body.insertBefore(tmp.firstChild, body.firstChild);
-};
-
-// ════════════════════════════════════════════════════════════════
-// PATCHED loadAll — adds OSINT + FORECAST loading
-// ════════════════════════════════════════════════════════════════
-const _loadAllOrig = loadAll;
-loadAll = async function() {
-    await _loadAllOrig();
-    // Load OSINT index
-    await loadOsintIdx();
-    if (osintOn) buildOsintBadges();
-    // Add OSINT badges to feed
-    document.querySelectorAll('.fi').forEach(fi => {
-        const oc = fi.getAttribute('onclick') || '';
-        const m = oc.match(/openIntel\('([^']+)'\)/);
-        if (m && osintIdx[m[1]]) {
-            const typeEl = fi.querySelector('.fi-type');
-            if (typeEl && !typeEl.querySelector('.fi-ev')) {
-                const badge = document.createElement('span');
-                badge.className = 'fi-ev';
-                badge.title = (osintIdx[m[1]].type || '') + ' evidence';
-                badge.textContent = osintIdx[m[1]].source_icon || '🛰';
-                typeEl.appendChild(badge);
-            }
-        }
-    });
-    // Load forecast data
-    try {
-        const fd = await fetch('/api/forecast-geo').then(r => r.json());
-        renderForecastPanel(fd);
-    } catch(e) { console.warn('[FORECAST]', e); }
-    initForecastLayer();
-};
-
-// Escape key closes zoom
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { osintZoomClose(); closeIntel(); } });
+// ── Load forecast data after page ready ───────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+    // Load forecast data separately - doesn't affect main loadAll
+    setTimeout(function() {
+        fetch('/api/forecast-geo')
+            .then(function(r){ return r.json(); })
+            .then(renderForecastPanel)
+            .catch(function(){});
+    }, 2000);
+});
 
 </script>
-
-<div id="zoom-ov" onclick="osintZoomClose()"><span id="zoom-close" onclick="osintZoomClose()">✕</span><img src="" alt=""/></div>
-<div id="dbg-overlay"></div>
-<div id="dbg-status"></div>
+<div id="zoom-ov" onclick="this.classList.remove('show')" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9990;align-items:center;justify-content:center;cursor:zoom-out"><img style="max-width:90vw;max-height:90vh;border:1px solid #1a6688" src="" alt=""/><span onclick="document.getElementById('zoom-ov').classList.remove('show')" style="position:fixed;top:20px;right:30px;font-size:2rem;color:#00e5ff;cursor:pointer">✕</span></div>
+<style>#zoom-ov.show{display:flex!important}</style>
 </body>
 </html>
 
 """
+
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
