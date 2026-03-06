@@ -2953,24 +2953,32 @@ function setLang(lang){document.documentElement.setAttribute('lang',lang);docume
 async function loadAll(){
   refreshCountdown=600;
   try{
+    // Individual fetches - one failure cannot block others
+    const _f = async (url, fallback) => {
+      for(let attempt=0; attempt<3; attempt++){
+        try{ return await fetch(url).then(r=>{ if(!r.ok)throw new Error(r.status); return r.json(); }); }
+        catch(e){ if(attempt===2) return fallback; await new Promise(r=>setTimeout(r,600)); }
+      }
+      return fallback;
+    };
     const [sr,er,tr,fc,reg,strat,sup,al,act,conflicts,trade,travel,alignU,alignG,snap,chkTraffic,alignTr]=await Promise.all([
-      fetch('/api/status').then(r=>r.json()).catch(()=>({})),
-      fetch('/api/events-v4').then(r=>r.json()).catch(()=>({events:[]})),
-      fetch('/api/trend').then(r=>r.json()).catch(()=>({trend:[]})),
-      fetch('/api/forecast').then(r=>r.json()).catch(()=>({})),
-      fetch('/api/regional').then(r=>r.json()).catch(()=>({regional:{}})),
-      fetch('/api/strategic').then(r=>r.json()).catch(()=>({})),
-      fetch('/api/supply-chain').then(r=>r.json()).catch(()=>({})),
-      fetch('/api/alerts').then(r=>r.json()).catch(()=>({alerts:[]})),
-      fetch('/api/activity').then(r=>r.json()).catch(()=>({})),
-      fetch('/api/conflicts').then(r=>r.json()).catch(()=>({conflicts:[]})),
-      fetch('/api/trade').then(r=>r.json()).catch(()=>({routes:[],sectors:{}})),
-      fetch('/api/travel-safety').then(r=>r.json()).catch(()=>({travel:{}})),
-      fetch('/api/alignment?conflict=ukraine_war').then(r=>r.json()).catch(()=>({})),
-      fetch('/api/alignment?conflict=gaza_conflict').then(r=>r.json()).catch(()=>({})),
-      fetch('/api/snapshot').then(r=>r.json()).catch(()=>({})),
-      fetch('/api/chokepoints-traffic').then(r=>r.json()).catch(()=>({chokepoints:{}})),
-      fetch('/api/alignment-trends').then(r=>r.json()).catch(()=>({trends:{}})),
+      _f('/api/status',{}),
+      _f('/api/events-v4',{events:[]}),
+      _f('/api/trend',{trend:[]}),
+      _f('/api/forecast',{}),
+      _f('/api/regional',{regional:{}}),
+      _f('/api/strategic',{}),
+      _f('/api/supply-chain',{}),
+      _f('/api/alerts',{alerts:[]}),
+      _f('/api/activity',{}),
+      _f('/api/conflicts',{conflicts:[]}),
+      _f('/api/trade',{routes:[],sectors:{}}),
+      _f('/api/travel-safety',{travel:{}}),
+      _f('/api/alignment?conflict=ukraine_war',{}),
+      _f('/api/alignment?conflict=gaza_conflict',{}),
+      _f('/api/snapshot',{}),
+      _f('/api/chokepoints-traffic',{chokepoints:{}}),
+      _f('/api/alignment-trends',{trends:{}}),
     ]);
 
     allEvents=er.events||[];
@@ -3022,13 +3030,22 @@ async function loadAll(){
 document.addEventListener('DOMContentLoaded',()=>{
   initMap();
   loadAll();
-  // Auto-retry if data empty after first load
-  setTimeout(async () => {
+  // Auto-retry with escalating delays
+  const _retry = async (attempt) => {
     try {
-      const r = await fetch('/api/events-v4').then(x => x.json());
-      if (!r.count || r.count === 0) { loadAll(); }
-    } catch(e) {}
-  }, 4000);
+      const r = await fetch('/api/events-v4').then(x=>x.json());
+      if(!r.count || r.count===0){ 
+        const el=document.getElementById('data-status');
+        if(el)el.textContent='DATA: RETRYING…';
+        if(attempt<4) setTimeout(()=>_retry(attempt+1), 2000*(attempt+1));
+        else loadAll();
+      } else {
+        const el=document.getElementById('data-status');
+        if(el)el.textContent='DATA: ●LIVE';
+      }
+    } catch(e){ if(attempt<3) setTimeout(()=>_retry(attempt+1), 3000); }
+  };
+  setTimeout(()=>_retry(0), 3000);
   function fixH(){
     const w=document.getElementById('wmap'),shell=document.querySelector('.shell'),rb=document.querySelector('.rep-bar'),mf=document.querySelector('.map-footer');
     if(w&&shell&&rb&&mf){const h=shell.clientHeight-rb.offsetHeight-mf.offsetHeight;w.style.height=Math.max(200,h)+'px';if(leafMap)leafMap.invalidateSize()}
