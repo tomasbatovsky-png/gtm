@@ -2072,6 +2072,12 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 /* ── FORECAST button ── */
 .layer-btn.al-forecast { border-color:#9966ff; color:#9966ff; background:rgba(153,102,255,.07) }
 
+
+#dbg-overlay{display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;
+  background:#ff000022;border-top:2px solid #ff2233;color:#ff6666;
+  font-family:monospace;font-size:11px;padding:8px;word-break:break-all;max-height:120px;overflow:auto;}
+#dbg-status{position:fixed;top:4px;right:200px;z-index:9999;
+  font-family:monospace;font-size:10px;color:#00ff88;background:#000;padding:2px 6px;}
 </style>
 </head>
 <body>
@@ -2988,7 +2994,15 @@ async function loadAll(){
     if(alignG.alignment)alignData['gaza_conflict']=alignG.alignment;
     if(alignTr.trends)alignTrends=alignTr.trends;
 
-    const _safe = (label, fn) => { try { fn(); } catch(e) { console.warn('[Render]', label, e.message); } };
+    const _safe = (label, fn) => {
+      try { fn(); }
+      catch(e) {
+        console.warn('[Render]', label, e.message);
+        const _dbg=document.getElementById('dbg-overlay');
+        if(_dbg){_dbg.style.display='block';_dbg.innerHTML+=('<br><b>'+label+'</b>: '+e.message);}
+      }
+    };
+    const _st=document.getElementById('dbg-status');if(_st)_st.textContent='JS: RUNNING';
     _safe('GTI',          ()=>renderGTI(sr));
     _safe('Chart',        ()=>renderChart(tr.trend||[]));
     _safe('Map',          ()=>renderMap(allEvents));
@@ -3012,6 +3026,7 @@ async function loadAll(){
 
     const ms=document.getElementById('map-src');
     if(ms)ms.textContent=`${er.count||0} INCIDENTS · ${new Date().toUTCString().slice(17,25)} UTC`;
+    const _st2=document.getElementById('dbg-status');if(_st2)_st2.textContent='DATA: OK ✓ '+er.count+' events';
 
     // Async: AI summary + daily briefing
     const se=document.getElementById('ai-sum');if(se){se.classList.add('typing');se.textContent='Analyzing…'}
@@ -3023,7 +3038,11 @@ async function loadAll(){
     await loadRepHistory();
     setLayer(currentLayer, document.querySelector('.layer-btn.al, .layer-btn.al-conflict, .layer-btn.al-trade, .layer-btn.al-travel, .layer-btn.al-align'));
 
-  }catch(err){console.error('[LoadAll]',err)}
+  }catch(err){
+    console.error('[LoadAll]',err);
+    const _dbg=document.getElementById('dbg-overlay');
+    if(_dbg){_dbg.style.display='block';_dbg.innerHTML='<b>LOAD ERROR</b>: '+err.message+'<br>'+err.stack.split('\n').slice(0,4).join('<br>');}
+  }
 }
 
 // ════════════ BOOT ════════════
@@ -3404,6 +3423,8 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') { osintZoomC
 </script>
 
 <div id="zoom-ov" onclick="osintZoomClose()"><span id="zoom-close" onclick="osintZoomClose()">✕</span><img src="" alt=""/></div>
+<div id="dbg-overlay"></div>
+<div id="dbg-status"></div>
 </body>
 </html>
 
