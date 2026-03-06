@@ -250,10 +250,10 @@ async def refresh_data():
     snapshot  = {"ts":datetime.datetime.utcnow().isoformat()+"Z","gti":gti_data["gti"],"event_count":len(events),"events":[{k:v for k,v in e.items() if k!="full_text"} for e in events]}
     history   = (_cache.get("history",[]) + [snapshot])[-144:]
     _cache = {"events":events,"history":history,"gti_data":gti_data,"regional":regional,"strategic":strategic,"supply_chain":supply,"alerts":alerts,"prev_gti":gti_data["gti"],"last_refresh":datetime.datetime.utcnow().isoformat()+"Z","forecast":forecast,"velocity":velocity,"source":source}
-    # Prefetch YouTube RSS in background
-    for ch_name, cid in YT_CHANNELS.items():
+    # Prefetch Wikimedia images for all regions in background
+    for region in list(REGION_SEARCH_TERMS.keys())[:5]:
         try:
-            await fetch_yt_channel(ch_name, cid)
+            await fetch_wikimedia_images(region)
         except:
             pass
     print(f"[Refresh] Done. GTI={gti_data['gti']} Events={len(events)}")
@@ -1643,100 +1643,98 @@ async def api_forecast_geo():
 
 
 
-# ── OSINT MEDIA SYSTEM — YouTube RSS (no API key needed) ──────────────────
-import xml.etree.ElementTree as ET
+# ── OSINT MEDIA SYSTEM — Wikimedia Commons (free, no API key) ─────────────
+# Search Wikimedia Commons for conflict-relevant images
 
-# YouTube channel IDs for major news sources
-YT_CHANNELS = {
-    "BBC News":   "UCnUYZLuoy1rq1aVMwx4aTzw",
-    "Al Jazeera": "UCNye-wNBqNL5ZzHSJdYgjXg",
-    "DW News":    "UCknLrEdhRCp1aegoMqRaCZg",
-    "WION":       "UCVqKcFPCUNtk-kMSZOxCVGw",
-    "Sky News":   "UCoMdktPbSTixAyNGwb-UYkQ",
+REGION_SEARCH_TERMS = {
+    "Eastern Europe": ["Ukraine war Kyiv 2024", "Russian invasion Ukraine", "Ukraine military 2024"],
+    "Middle East":    ["Gaza Strip 2024", "Israel Gaza conflict", "Middle East conflict 2024"],
+    "Horn of Africa": ["Red Sea Houthi ship", "Yemen conflict 2024", "Horn of Africa military"],
+    "West Africa":    ["Mali Sahel insurgency", "Burkina Faso conflict", "West Africa security"],
+    "East Asia":      ["Taiwan Strait military", "South China Sea navy", "East Asia tensions"],
+    "South Asia":     ["Pakistan India border", "Kashmir conflict", "South Asia military"],
+    "Central Asia":   ["Central Asia conflict", "Afghanistan 2024"],
+    "Mediterranean":  ["Mediterranean naval", "Libya conflict"],
+    "default":        ["geopolitical conflict 2024", "military operation 2024"],
 }
 
-# Region -> which channels to prefer
-REGION_CHANNELS = {
-    "Eastern Europe": ["BBC News", "DW News", "Al Jazeera"],
-    "Middle East":    ["Al Jazeera", "BBC News", "WION"],
-    "Horn of Africa": ["Al Jazeera", "BBC News", "DW News"],
-    "West Africa":    ["Al Jazeera", "DW News", "BBC News"],
-    "East Asia":      ["WION", "Sky News", "BBC News"],
-    "South Asia":     ["WION", "Al Jazeera", "DW News"],
-    "default":        ["BBC News", "Al Jazeera", "DW News"],
-}
+_wikimedia_cache = {}  # region -> [{title, thumb, page_url, src, tag}]
+_wikimedia_last_fetch = {}
 
-_yt_cache = {}  # channel_name -> [{vid, title, published}]
-_yt_last_fetch = {}  # channel_name -> timestamp
-
-async def fetch_yt_channel(name, cid):
-    """Fetch latest videos from YouTube channel RSS"""
-    import datetime
-    now = datetime.datetime.utcnow()
-    last = _yt_last_fetch.get(name)
-    if last and (now - last).seconds < 1800:  # cache 30min
-        return _yt_cache.get(name, [])
+async def fetch_wikimedia_images(region):
+    """Fetch relevant images from Wikimedia Commons for a region"""
+    import datetime, urllib.request, json, urllib.parse
     
-    try:
-        import urllib.request
-        url = f"https://www.youtube.com/feeds/videos.xml?channel_id={cid}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=6) as r:
-            xml_data = r.read().decode("utf-8")
+    now = datetime.datetime.utcnow()
+    last = _wikimedia_last_fetch.get(region)
+    if last and (now - last).seconds < 3600:  # cache 1h
+        return _wikimedia_cache.get(region, [])
+    
+    terms = REGION_SEARCH_TERMS.get(region, REGION_SEARCH_TERMS["default"])
+    results = []
+    
+    for term in terms[:2]:
+        try:
+            q = urllib.parse.quote(term)
+            url = (f"https://commons.wikimedia.org/w/api.php"
+                   f"?action=query&generator=search&gsrnamespace=6"
+                   f"&gsrsearch={q}&gsrlimit=5"
+                   f"&prop=imageinfo&iiprop=url|extmetadata"
+                   f"&iiurlwidth=320&format=json")
+            req = urllib.request.Request(url, headers={"User-Agent": "GlobalTensionMonitor/1.0"})
+            with urllib.request.urlopen(req, timeout=6) as r:
+                data = json.loads(r.read().decode("utf-8"))
+            
+            pages = data.get("query", {}).get("pages", {})
+            for pid, page in pages.items():
+                ii = page.get("imageinfo", [{}])[0]
+                thumb = ii.get("thumburl", "")
+                page_url = ii.get("descriptionurl", "")
+                meta = ii.get("extmetadata", {})
+                title = meta.get("ImageDescription", {}).get("value", "")
+                if not title:
+                    title = page.get("title", "").replace("File:", "").replace("_", " ")
+                # Only use jpg/png images, skip svg/gif
+                mime = ii.get("mime", "")
+                if thumb and ("jpg" in thumb.lower() or "png" in thumb.lower()):
+                    # Strip HTML tags from title
+                    title = re.sub(r"<[^>]+>", "", title)[:60]
+                    results.append({
+                        "thumb": thumb,
+                        "url": page_url or f"https://commons.wikimedia.org/wiki/{page.get('title','')}",
+                        "title": title or term,
+                        "src": "Wikimedia Commons",
+                        "tag": "SATELLITE" if "satellite" in title.lower() or "aerial" in title.lower() else "PHOTO",
+                        "license": meta.get("License", {}).get("value", "CC")
+                    })
+                    if len(results) >= 3:
+                        break
+        except Exception as ex:
+            print(f"[Wikimedia] {region}/{term}: {ex}")
         
-        ns = {"yt": "http://www.youtube.com/xml/schemas/2015",
-              "atom": "http://www.w3.org/2005/Atom"}
-        root = ET.fromstring(xml_data)
-        entries = root.findall("atom:entry", ns)
-        
-        videos = []
-        for entry in entries[:5]:
-            vid_id = entry.find("yt:videoId", ns)
-            title  = entry.find("atom:title", ns)
-            pub    = entry.find("atom:published", ns)
-            if vid_id is not None and title is not None:
-                videos.append({
-                    "vid":   vid_id.text,
-                    "title": title.text,
-                    "pub":   pub.text if pub is not None else "",
-                    "src":   name,
-                    "tag":   "VIDEO",
-                    "thumb": f"https://img.youtube.com/vi/{vid_id.text}/mqdefault.jpg",
-                    "url":   f"https://www.youtube.com/watch?v={vid_id.text}"
-                })
-        
-        _yt_cache[name] = videos
-        _yt_last_fetch[name] = now
-        return videos
-    except Exception as ex:
-        print(f"[YT RSS] {name}: {ex}")
-        return _yt_cache.get(name, [])
+        if len(results) >= 3:
+            break
+    
+    if results:
+        _wikimedia_cache[region] = results
+        _wikimedia_last_fetch[region] = now
+    return results
 
 async def get_osint_for_region(region):
-    """Get fresh YouTube videos for a region"""
-    channels = REGION_CHANNELS.get(region, REGION_CHANNELS["default"])
-    results = []
-    for ch_name in channels[:2]:  # fetch from 2 channels
-        cid = YT_CHANNELS.get(ch_name)
-        if cid:
-            videos = await fetch_yt_channel(ch_name, cid)
-            if videos:
-                results.append(videos[0])  # latest video from each channel
-    return results if results else []
+    """Get Wikimedia images for a region"""
+    images = await fetch_wikimedia_images(region)
+    return images[:2]
 
 def get_osint_for_event(event):
-    """Sync wrapper — returns cached data or empty (async fetch happens via endpoint)"""
+    """Sync - returns cached Wikimedia images"""
     region = event.get("region", "default")
-    channels = REGION_CHANNELS.get(region, REGION_CHANNELS["default"])
-    results = []
-    for ch_name in channels[:2]:
-        cached = _yt_cache.get(ch_name, [])
-        if cached:
-            results.append(cached[0])
-    return results
+    return _wikimedia_cache.get(region, [])[:2]
+
+
 
 
 HTML_PAGE = r"""
+
 
 
 
@@ -2110,6 +2108,78 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
   .left-panel{max-height:35vh}
   .hdr-titles h1{font-size:.65rem}
   .hdr-sub{display:none}
+}
+
+/* ── FOOTER ── */
+.gtm-footer {
+  background:#020608;
+  border-top:1px solid #0d3348;
+  padding:8px 20px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:6px;
+  font-family:var(--mono);
+  font-size:.38rem;
+  color:#2a4a5a;
+  flex-shrink:0;
+  z-index:10;
+  position:relative;
+}
+.gtm-footer a {
+  color:#4a7a99;
+  text-decoration:none;
+  transition:color .2s;
+}
+.gtm-footer a:hover { color:#00e5ff; }
+.gtm-footer .ft-sep { color:#0d3348; margin:0 5px; }
+.gtm-footer .ft-disclaimer {
+  flex:1;
+  min-width:200px;
+  color:#1a3a4a;
+  font-size:.34rem;
+  line-height:1.4;
+}
+/* Disclaimer modal */
+#disc-modal {
+  display:none;
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.85);
+  z-index:9995;
+  align-items:center;
+  justify-content:center;
+}
+#disc-modal.open { display:flex; }
+.disc-box {
+  background:#040d12;
+  border:1px solid #1a6688;
+  max-width:640px;
+  width:90%;
+  max-height:80vh;
+  overflow-y:auto;
+  padding:20px 24px;
+  font-family:var(--mono);
+  font-size:.46rem;
+  color:#4a7a99;
+  line-height:1.7;
+  position:relative;
+}
+.disc-box h2 { font-family:var(--disp); color:#00e5ff; font-size:.7rem; margin-bottom:12px; letter-spacing:.1em; }
+.disc-box h3 { color:#f5c518; font-size:.5rem; margin:12px 0 4px; letter-spacing:.08em; }
+.disc-box p  { margin-bottom:8px; color:#4a7a99; }
+.disc-box .disc-close {
+  position:sticky;
+  top:0;
+  float:right;
+  background:#040d12;
+  border:1px solid #1a6688;
+  color:#00e5ff;
+  cursor:pointer;
+  padding:2px 8px;
+  font-family:var(--mono);
+  font-size:.5rem;
 }
 </style>
 </head>
@@ -3390,8 +3460,56 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 <div id="zoom-ov" onclick="this.classList.remove('show')" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9990;align-items:center;justify-content:center;cursor:zoom-out"><img style="max-width:90vw;max-height:90vh;border:1px solid #1a6688" src="" alt=""/><span onclick="document.getElementById('zoom-ov').classList.remove('show')" style="position:fixed;top:20px;right:30px;font-size:2rem;color:#00e5ff;cursor:pointer">✕</span></div>
 <style>#zoom-ov.show{display:flex!important}</style>
+
+<!-- ════ FOOTER ════ -->
+<footer class="gtm-footer">
+  <div class="ft-disclaimer">
+    ⚠ Automated analysis of public sources. Data may be incomplete or delayed.
+    Not for operational use. Verify via primary sources.
+  </div>
+  <div style="display:flex;align-items:center;gap:0;white-space:nowrap">
+    <a href="/methodology" target="_blank">Methodology</a>
+    <span class="ft-sep">·</span>
+    <a href="/methodology#sources" target="_blank">Data Sources</a>
+    <span class="ft-sep">·</span>
+    <a href="#" onclick="document.getElementById('disc-modal').classList.add('open');return false">Disclaimer</a>
+    <span class="ft-sep">·</span>
+    <a href="mailto:support@globaltensionmonitor.com">support@globaltensionmonitor.com</a>
+    <span class="ft-sep">·</span>
+    <span style="color:#1a3a4a">© 2026 GlobalTensionMonitor.com</span>
+  </div>
+</footer>
+
+<!-- ════ DISCLAIMER MODAL ════ -->
+<div id="disc-modal">
+  <div class="disc-box">
+    <button class="disc-close" onclick="document.getElementById('disc-modal').classList.remove('open')">✕ CLOSE</button>
+    <h2>DISCLAIMER & METHODOLOGY</h2>
+
+    <h3>GEOPOLITICAL DATA</h3>
+    <p>This platform provides automated analysis of publicly available information sources including RSS news feeds, open-source intelligence, and published reports. Information displayed may be incomplete, delayed, or unverified. This platform should not be considered a source of official intelligence or real-time operational information. Users should verify critical information using primary sources.</p>
+
+    <h3>FORECAST INDICATORS</h3>
+    <p>Forecast indicators are algorithmic estimates based on recent event patterns and publicly available data. They represent probabilistic assessments using a weighted model (incident rate × 0.4 + velocity × 0.3 + military score × 0.2 + diplomatic score × 0.1) and should not be interpreted as predictions of specific future events.</p>
+
+    <h3>MARKET & TRADE SIGNALS</h3>
+    <p>Market-related signals (oil risk, shipping disruption, supply chain indicators) are informational indicators derived from geopolitical event analysis. They do not constitute financial or investment advice. No trading or investment decisions should be made based solely on this data.</p>
+
+    <h3>AI-GENERATED CONTENT</h3>
+    <p>Daily intelligence briefings and event summaries are generated by Claude AI (Anthropic) based on aggregated news data. AI may misinterpret, hallucinate, or incorrectly contextualize information. All AI-generated content should be treated as analytical commentary, not verified reporting.</p>
+
+    <h3>DATA SOURCES</h3>
+    <p>BBC News · Al Jazeera · Reuters · DW News · Sky News · Wikimedia Commons · NASA EOSDIS. All sources are publicly available. GTM does not claim ownership of source content.</p>
+
+    <p style="color:#1a3a4a;margin-top:16px;font-size:.38rem">
+      Global Tension Monitor · <a href="mailto:support@globaltensionmonitor.com" style="color:#2a4a5a">support@globaltensionmonitor.com</a> · v4.3
+    </p>
+  </div>
+</div>
+
 </body>
 </html>
+
 
 
 
@@ -3405,6 +3523,146 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 
+
+
+
+
+@app.get("/methodology", response_class=HTMLResponse)
+async def methodology():
+    return r'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Methodology — Global Tension Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Share+Tech+Mono&family=Rajdhani:wght@300;400;600&display=swap" rel="stylesheet"/>
+<style>
+  :root{--bg:#020608;--bg2:#040d12;--b0:#0d3348;--b1:#1a6688;--green:#00ff88;--cyan:#00e5ff;--txt:#c8e8f8;--dim:#4a7a99;--muted:#2a4a5a;--mono:'Share Tech Mono',monospace;--disp:'Orbitron',sans-serif;--body:'Rajdhani',sans-serif}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:var(--body);font-size:15px;line-height:1.7;padding:0}
+  .hdr{background:#020608;border-bottom:1px solid var(--b0);padding:14px 40px;display:flex;align-items:center;gap:16px}
+  .hdr a{font-family:var(--disp);font-size:.65rem;color:var(--cyan);text-decoration:none;letter-spacing:.15em}
+  .hdr a:hover{color:#fff}
+  .hdr-title{font-family:var(--disp);font-size:1rem;color:var(--cyan);letter-spacing:.12em}
+  .container{max-width:820px;margin:0 auto;padding:40px 24px 80px}
+  h1{font-family:var(--disp);font-size:1.4rem;color:var(--cyan);letter-spacing:.12em;margin-bottom:6px}
+  .subtitle{font-family:var(--mono);font-size:.55rem;color:var(--dim);margin-bottom:40px}
+  h2{font-family:var(--disp);font-size:.8rem;color:var(--green);letter-spacing:.1em;margin:36px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--b0)}
+  h3{font-family:var(--mono);font-size:.6rem;color:#f5c518;margin:20px 0 8px}
+  p{color:#8ab0c8;margin-bottom:12px;font-size:.95rem}
+  .formula{background:var(--bg2);border:1px solid var(--b0);border-left:3px solid var(--cyan);padding:12px 16px;font-family:var(--mono);font-size:.6rem;color:var(--cyan);margin:12px 0;letter-spacing:.05em}
+  .sources-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:12px 0}
+  .src-card{background:var(--bg2);border:1px solid var(--b0);padding:10px 14px}
+  .src-card .name{font-family:var(--mono);font-size:.5rem;color:var(--cyan);margin-bottom:3px}
+  .src-card .desc{font-size:.85rem;color:var(--dim)}
+  .badge{display:inline-block;background:var(--b0);border:1px solid var(--b1);font-family:var(--mono);font-size:.42rem;color:var(--cyan);padding:2px 7px;margin:2px 3px;vertical-align:middle}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:.9rem}
+  th{font-family:var(--mono);font-size:.45rem;color:var(--dim);text-align:left;padding:6px 10px;border-bottom:1px solid var(--b0);text-transform:uppercase}
+  td{padding:6px 10px;border-bottom:1px solid #050f16;color:#8ab0c8}
+  tr:hover td{background:#040d12}
+  .footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--b0);font-family:var(--mono);font-size:.42rem;color:var(--muted);text-align:center}
+  .footer a{color:var(--dim);text-decoration:none}
+  .footer a:hover{color:var(--cyan)}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <a href="/">← BACK TO MONITOR</a>
+  <span style="color:#0d3348">|</span>
+  <span class="hdr-title">METHODOLOGY</span>
+</div>
+<div class="container">
+  <h1>METHODOLOGY</h1>
+  <div class="subtitle">How Global Tension Monitor collects, processes, and displays geopolitical data</div>
+
+  <h2>GLOBAL TENSION INDEX (GTI)</h2>
+  <p>The Global Tension Index is a composite score from 0–10 measuring current global geopolitical stress. It is calculated automatically every 10 minutes based on active incident data.</p>
+
+  <h3>Calculation Formula</h3>
+  <div class="formula">
+    GTI = BASE_SCORE<br>
+    + (incident_count × 0.3)<br>
+    + (military_events × 0.5)<br>
+    + (strategic_events × 0.8)<br>
+    + (velocity_modifier)<br>
+    capped at 10.0
+  </div>
+
+  <table>
+    <tr><th>Component</th><th>Weight</th><th>Description</th></tr>
+    <tr><td>Incident count</td><td>×0.3</td><td>Total verified/probable incidents in 24h window</td></tr>
+    <tr><td>Military events</td><td>×0.5</td><td>Airstrikes, naval movements, troop deployments</td></tr>
+    <tr><td>Strategic events</td><td>×0.8</td><td>Nuclear, WMD-adjacent, or major escalatory actions</td></tr>
+    <tr><td>Velocity modifier</td><td>dynamic</td><td>Rate of change vs. 7-day average</td></tr>
+  </table>
+
+  <h3>GTI Status Thresholds</h3>
+  <table>
+    <tr><th>Score</th><th>Status</th><th>Meaning</th></tr>
+    <tr><td>0.0 – 3.0</td><td style="color:#00ff88">STABLE</td><td>Low activity, baseline monitoring</td></tr>
+    <tr><td>3.0 – 5.0</td><td style="color:#f5c518">ELEVATED</td><td>Above-average incident rate</td></tr>
+    <tr><td>5.0 – 7.0</td><td style="color:#ff6b1a">HIGH</td><td>Multiple active conflicts escalating</td></tr>
+    <tr><td>7.0 – 8.5</td><td style="color:#ff2233">CRITICAL</td><td>Major international crisis</td></tr>
+    <tr><td>8.5+</td><td style="color:#ff0055">EXTREME</td><td>Near-systemic conflict risk</td></tr>
+  </table>
+
+  <h2 id="forecast">ESCALATION FORECAST MODEL</h2>
+  <p>The 72-hour forecast uses a weighted multi-factor model applied per geographic region.</p>
+  <div class="formula">
+    Escalation Probability = <br>
+    (incident_rate × 0.4)<br>
+    + (velocity_score × 0.3)<br>
+    + (military_score × 0.2)<br>
+    + (diplomatic_score × 0.1)
+  </div>
+  <p>Probabilities above 65% are classified as HIGH or CRITICAL. The model is recalculated with each data refresh and should be treated as a probabilistic estimate, not a definitive prediction.</p>
+
+  <h2>CONFIDENCE SCORING</h2>
+  <p>Each event receives a confidence score (0–100%) based on:</p>
+  <table>
+    <tr><th>Factor</th><th>Impact</th></tr>
+    <tr><td>Number of independent sources</td><td>+15% per additional source</td></tr>
+    <tr><td>Source tier (tier-1 outlet)</td><td>+10%</td></tr>
+    <tr><td>Event age (recency)</td><td>−5% per 6h after detection</td></tr>
+    <tr><td>Geographic precision</td><td>+5% if city-level located</td></tr>
+    <tr><td>Event type corroboration</td><td>+10% if military confirms</td></tr>
+  </table>
+  <p>
+    <span class="badge" style="border-color:#00ff88;color:#00ff88">CONFIRMED 85%+</span>
+    <span class="badge" style="border-color:#f5c518;color:#f5c518">PROBABLE 60–84%</span>
+    <span class="badge" style="border-color:#ff6b1a;color:#ff6b1a">UNVERIFIED &lt;60%</span>
+  </p>
+
+  <h2 id="sources">DATA SOURCES</h2>
+  <div class="sources-grid">
+    <div class="src-card"><div class="name">BBC NEWS</div><div class="desc">RSS feed — world news tier-1</div></div>
+    <div class="src-card"><div class="name">AL JAZEERA</div><div class="desc">RSS feed — Middle East focus</div></div>
+    <div class="src-card"><div class="name">REUTERS</div><div class="desc">RSS feed — global wire service</div></div>
+    <div class="src-card"><div class="name">DW NEWS</div><div class="desc">RSS feed — European perspective</div></div>
+    <div class="src-card"><div class="name">SKY NEWS</div><div class="desc">RSS feed — breaking news</div></div>
+    <div class="src-card"><div class="name">WIKIMEDIA COMMONS</div><div class="desc">Open-source imagery (CC licensed)</div></div>
+    <div class="src-card"><div class="name">CLAUDE AI</div><div class="desc">Anthropic — summaries & briefings</div></div>
+  </div>
+  <p style="font-size:.85rem;color:var(--muted);margin-top:8px">Refresh interval: every 10 minutes. Data is cached server-side and served to all users simultaneously.</p>
+
+  <h2>LIMITATIONS</h2>
+  <p>GTM is an automated system with inherent limitations:</p>
+  <p><strong style="color:#f5c518">Coverage gaps:</strong> Only events reported by monitored RSS sources are detected. Unreported or censored conflicts will not appear.</p>
+  <p><strong style="color:#f5c518">AI interpretation:</strong> Claude AI may misclassify event types, regions, or severity based on ambiguous news text.</p>
+  <p><strong style="color:#f5c518">Latency:</strong> There is a 10–30 minute delay between real-world events and display on the map.</p>
+  <p><strong style="color:#f5c518">Not a primary source:</strong> GTM aggregates and analyzes secondary sources. Always verify via official government, military, or humanitarian organization communications.</p>
+
+  <div class="footer">
+    <a href="/">← Back to Monitor</a>
+    &nbsp;·&nbsp;
+    <a href="mailto:support@globaltensionmonitor.com">support@globaltensionmonitor.com</a>
+    &nbsp;·&nbsp;
+    © 2026 GlobalTensionMonitor.com — All data from public sources
+  </div>
+</div>
+</body>
+</html>'''
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
