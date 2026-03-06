@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 import feedparser
 
-ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "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")
 
 EVENT_KEYWORDS = {
     "missile strike":        ["missile strike","rocket attack","ballistic missile","missile launch","rocket fire","katyusha","missile fired","rockets fired"],
