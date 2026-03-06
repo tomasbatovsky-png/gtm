@@ -1366,18 +1366,272 @@ async def api_osint_index():
                 })
     return {"evidence_available": index, "count": len(index), "timestamp": datetime.datetime.utcnow().isoformat()+"Z"}
 
+
+
+# ═══════════════════════════════════════════════════════════════
+# GTM v4.3 — GEOPOLITICAL FORECAST LAYER
+# Weighted escalation probability model
+# ═══════════════════════════════════════════════════════════════
+
+# Region centers for heatmap rendering
+FORECAST_REGIONS = {
+    "Middle East": {
+        "lat": 31.5, "lon": 35.5, "radius": 1200,
+        "sub_zones": [
+            {"lat": 33.3, "lon": 44.4, "name": "Iraq-Iran border"},
+            {"lat": 31.5, "lon": 34.5, "name": "Gaza theater"},
+            {"lat": 33.9, "lon": 35.5, "name": "Lebanon-Israel"},
+            {"lat": 15.4, "lon": 44.2, "name": "Yemen"},
+        ]
+    },
+    "Eastern Europe": {
+        "lat": 49.0, "lon": 32.0, "radius": 900,
+        "sub_zones": [
+            {"lat": 48.0, "lon": 37.8, "name": "Donbas frontline"},
+            {"lat": 50.4, "lon": 30.5, "name": "Kyiv region"},
+            {"lat": 46.5, "lon": 30.7, "name": "Odesa/Black Sea"},
+        ]
+    },
+    "East Asia": {
+        "lat": 24.0, "lon": 119.5, "radius": 800,
+        "sub_zones": [
+            {"lat": 24.0, "lon": 119.5, "name": "Taiwan Strait"},
+            {"lat": 35.7, "lon": 129.0, "name": "Korean Peninsula"},
+            {"lat": 26.3, "lon": 127.8, "name": "East China Sea"},
+        ]
+    },
+    "Horn of Africa": {
+        "lat": 12.5, "lon": 43.5, "radius": 700,
+        "sub_zones": [
+            {"lat": 12.8, "lon": 43.3, "name": "Bab el-Mandeb"},
+            {"lat": 15.4, "lon": 44.2, "name": "Yemen coast"},
+            {"lat": 11.5, "lon": 43.1, "name": "Gulf of Aden"},
+        ]
+    },
+    "West Africa": {
+        "lat": 13.0, "lon": 2.0, "radius": 1100,
+        "sub_zones": [
+            {"lat": 12.4, "lon": -1.5, "name": "Burkina Faso"},
+            {"lat": 17.0, "lon": 8.0, "name": "Niger"},
+            {"lat": 13.5, "lon": 2.1, "name": "Mali-Niger border"},
+        ]
+    },
+    "Mediterranean": {
+        "lat": 35.5, "lon": 22.0, "radius": 800,
+        "sub_zones": [
+            {"lat": 35.0, "lon": 33.0, "name": "Eastern Med"},
+            {"lat": 38.0, "lon": 14.0, "name": "Central Med"},
+        ]
+    },
+    "South Asia": {
+        "lat": 30.0, "lon": 70.0, "radius": 900,
+        "sub_zones": [
+            {"lat": 33.7, "lon": 73.1, "name": "Kashmir LoC"},
+            {"lat": 28.6, "lon": 77.2, "name": "India-Pakistan border"},
+        ]
+    },
+    "Central Asia": {
+        "lat": 41.0, "lon": 63.0, "radius": 700,
+        "sub_zones": [
+            {"lat": 38.6, "lon": 68.8, "name": "Tajikistan border"},
+        ]
+    },
+}
+
+TREND_SIGNALS = {
+    "missile strike": {"military": 2.0, "diplomatic": 0.5},
+    "airstrike": {"military": 1.8, "diplomatic": 0.3},
+    "naval deployment": {"military": 1.5, "diplomatic": 0.2},
+    "military movement": {"military": 1.3, "diplomatic": 0.1},
+    "strategic event": {"military": 0.8, "diplomatic": 1.2},
+    "diplomatic incident": {"military": 0.2, "diplomatic": 2.0},
+    "economic sanction": {"military": 0.1, "diplomatic": 1.5},
+    "protest": {"military": 0.1, "diplomatic": 0.8},
+    "ceasefire": {"military": -0.5, "diplomatic": -1.0},
+    "tension": {"military": 0.5, "diplomatic": 0.6},
+}
+
+def calc_forecast_score(events, region_name):
+    """
+    Weighted escalation probability model:
+    score = incident_rate*0.4 + escalation_velocity*0.3 + military_movements*0.2 + diplomatic_breakdown*0.1
+    Returns 0.0-1.0 probability
+    """
+    region_events = [e for e in events if e.get("region") == region_name]
+    all_events = events
+
+    if not region_events:
+        # Global baseline from surrounding regions
+        base = len(all_events) * 0.003
+        return min(0.18, max(0.05, base))
+
+    n = len(region_events)
+    total = max(1, len(all_events))
+
+    # 1. Incident rate (events in region vs total)
+    incident_rate = min(1.0, n / max(1, total) * 3.5 + n * 0.08)
+
+    # 2. Escalation velocity (high-conf events weighted more)
+    high_conf = sum(1 for e in region_events if e.get("confidence", 0) >= 75)
+    escalation_velocity = min(1.0, high_conf * 0.15 + n * 0.05)
+
+    # 3. Military movements
+    military_score = 0.0
+    for e in region_events:
+        signals = TREND_SIGNALS.get(e.get("type", "").lower(), {"military": 0.3, "diplomatic": 0.3})
+        military_score += signals["military"] * (e.get("confidence", 70) / 100)
+    military_movements = min(1.0, military_score / max(1, n) * 0.6)
+
+    # 4. Diplomatic breakdown
+    diplomatic_score = 0.0
+    for e in region_events:
+        signals = TREND_SIGNALS.get(e.get("type", "").lower(), {"military": 0.3, "diplomatic": 0.3})
+        diplomatic_score += signals["diplomatic"]
+    diplomatic_breakdown = min(1.0, diplomatic_score / max(1, n) * 0.4)
+
+    # Weighted composite
+    raw = (
+        incident_rate        * 0.40 +
+        escalation_velocity  * 0.30 +
+        military_movements   * 0.20 +
+        diplomatic_breakdown * 0.10
+    )
+
+    # Apply confidence-weighted boost for very active regions
+    avg_conf = sum(e.get("confidence", 70) for e in region_events) / len(region_events)
+    conf_mult = 0.8 + (avg_conf / 100) * 0.4
+
+    score = min(0.97, max(0.04, raw * conf_mult))
+    return round(score, 3)
+
+def get_forecast_drivers(events, region_name):
+    """Return list of signal strings driving the forecast."""
+    region_events = [e for e in events if e.get("region") == region_name]
+    drivers = []
+    type_counts = {}
+    for e in region_events:
+        t = e.get("type", "unknown").lower()
+        type_counts[t] = type_counts.get(t, 0) + 1
+
+    driver_labels = {
+        "missile strike": "Missile exchanges detected",
+        "airstrike": "Airstrikes confirmed",
+        "naval deployment": "Naval deployments active",
+        "military movement": "Military buildup observed",
+        "strategic event": "Strategic signaling detected",
+        "diplomatic incident": "Diplomatic breakdown signals",
+        "economic sanction": "Economic pressure applied",
+        "tension": "Elevated tension indicators",
+        "ceasefire": "Ceasefire fragility risk",
+    }
+    for t, count in sorted(type_counts.items(), key=lambda x: -x[1]):
+        label = driver_labels.get(t, t.title() + " activity")
+        drivers.append({"signal": label, "count": count})
+
+    if not drivers:
+        drivers = [{"signal": "Baseline regional monitoring", "count": 0}]
+    return drivers[:5]
+
+def get_trend_arrow(current_score, events, region_name):
+    """Compute trend direction based on recent event age."""
+    region_events = [e for e in events if e.get("region") == region_name]
+    if not region_events:
+        return "→", "stable"
+    recent = [e for e in region_events if (e.get("age_minutes") or 999) < 120]
+    older  = [e for e in region_events if (e.get("age_minutes") or 999) >= 120]
+    recent_rate = len(recent) / max(1, 2)   # per hour
+    older_rate  = len(older)  / max(1, 10)  # per hour
+    if recent_rate > older_rate * 1.3:
+        return "↑", "escalating"
+    elif recent_rate < older_rate * 0.7:
+        return "↓", "decreasing"
+    else:
+        return "→", "stable"
+
+def score_to_label(score):
+    if score >= 0.72: return "ESCALATION LIKELY", "#ff2233"
+    if score >= 0.50: return "HIGH PROBABILITY", "#ff6b1a"
+    if score >= 0.30: return "ELEVATED RISK", "#f5c518"
+    return "STABLE", "#00ff88"
+
+def calc_forecast_confidence(events, total_signals):
+    """Overall forecast confidence based on signal richness."""
+    n = len(events)
+    high_conf_count = sum(1 for e in events if e.get("confidence", 0) >= 75)
+    conf = min(92, max(38, 45 + high_conf_count * 3 + min(n * 1.5, 30)))
+    return round(conf, 1)
+
+def build_heatmap_points(events, forecasts):
+    """Generate weighted heatmap point list for Leaflet.heat."""
+    points = []
+    for region_name, fr in forecasts.items():
+        cfg = FORECAST_REGIONS.get(region_name)
+        if not cfg:
+            continue
+        intensity = fr["probability"]
+        # Main region center — highest weight
+        points.append([cfg["lat"], cfg["lon"], round(intensity, 3)])
+        # Sub-zones — slightly reduced weight
+        for sz in cfg.get("sub_zones", []):
+            sub_intensity = min(0.99, intensity * (0.7 + random.uniform(0, 0.25)))
+            points.append([sz["lat"], sz["lon"], round(sub_intensity, 3)])
+    return points
+
+@app.get("/api/forecast-geo")
+async def api_forecast_geo():
+    """Full geopolitical forecast: per-region scores + heatmap points."""
+    events = gevents()
+    gti_data = _cache.get("gti_data") or calc_gti(events)
+    total_signals = len(events)
+
+    forecasts = {}
+    for region_name in FORECAST_REGIONS.keys():
+        prob = calc_forecast_score(events, region_name)
+        arrow, trend_dir = get_trend_arrow(prob, events, region_name)
+        drivers = get_forecast_drivers(events, region_name)
+        label, color = score_to_label(prob)
+        region_events = [e for e in events if e.get("region") == region_name]
+        forecasts[region_name] = {
+            "probability": prob,
+            "probability_pct": round(prob * 100, 1),
+            "label": label,
+            "color": color,
+            "trend_arrow": arrow,
+            "trend_dir": trend_dir,
+            "drivers": drivers,
+            "event_count": len(region_events),
+        }
+
+    heatmap_points = build_heatmap_points(events, forecasts)
+    confidence = calc_forecast_confidence(events, total_signals)
+
+    # Key regions for panel display
+    panel_regions = ["Middle East", "Eastern Europe", "East Asia", "Horn of Africa", "West Africa"]
+
+    return {
+        "forecasts": forecasts,
+        "heatmap_points": heatmap_points,
+        "panel_regions": panel_regions,
+        "confidence": confidence,
+        "signals_analyzed": total_signals,
+        "gti": gti_data.get("gti", 0),
+        "model": "incident_rate*0.4 + velocity*0.3 + military*0.2 + diplomatic*0.1",
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
+    }
+
 HTML_PAGE = """
+
 <!DOCTYPE html>
 <html lang="en" dir="ltr">
 <head>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>GLOBAL CONFLICT RADAR v4.2</title>
+<title>GLOBAL CONFLICT RADAR v4.3</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js">
 // OSINT EXTENSION
 
 // ═══════════════════════════════════════════════════════════════
-// OSINT EVIDENCE LAYER v4.2
+// OSINT EVIDENCE LAYER v4.3
 // Extension pattern - no existing functions replaced
 // ═══════════════════════════════════════════════════════════════
 
@@ -1903,7 +2157,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* OSINT */
-/* ═══ OSINT EVIDENCE LAYER v4.2 CSS ═══ */
+/* ═══ OSINT EVIDENCE LAYER v4.3 CSS ═══ */
 .ev-marker-wrap{position:relative;display:inline-block}
 .ev-badge{position:absolute;top:-8px;right:-8px;width:13px;height:13px;border-radius:50%;background:#9966ff;border:1px solid rgba(153,102,255,.5);display:flex;align-items:center;justify-content:center;font-size:.35rem;box-shadow:0 0 5px #9966ff88;animation:evGlow 2s ease-in-out infinite;z-index:2;pointer-events:none}
 @keyframes evGlow{0%,100%{box-shadow:0 0 4px #9966ff66}50%{box-shadow:0 0 9px #9966ffcc}}
@@ -1946,6 +2200,63 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 #zoom-ov img{max-width:90vw;max-height:90vh;object-fit:contain;border:1px solid #1a6688}
 #zoom-close{position:fixed;top:14px;right:18px;color:#4a7a99;font-size:1.4rem;cursor:pointer;z-index:10000;line-height:1}
 
+
+/* FORECAST */
+/* ═══════════════════════════════════════
+   FORECAST LAYER v4.3
+═══════════════════════════════════════ */
+
+/* ── Forecast panel in left sidebar ── */
+.fc72-panel { padding: 0 }
+.fc72-header { display:flex; align-items:center; justify-content:space-between; padding:4px 9px; border-bottom:1px solid var(--b0); background:rgba(153,102,255,.04); margin-bottom:4px }
+.fc72-title { font-family:var(--disp); font-size:.44rem; letter-spacing:.14em; color:#9966ff }
+.fc72-conf { font-family:var(--mono); font-size:.4rem; color:var(--muted) }
+
+.fc72-region { border:1px solid var(--b0); margin:3px 9px; padding:5px 7px; background:rgba(0,170,255,.02); cursor:default; transition:background .15s }
+.fc72-region:hover { background:rgba(0,170,255,.04) }
+.fc72-region-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:3px }
+.fc72-region-name { font-family:var(--mono); font-size:.46rem; color:var(--dim) }
+.fc72-region-prob { font-family:var(--disp); font-size:.82rem; font-weight:700; line-height:1 }
+.fc72-region-meta { display:flex; align-items:center; gap:5px }
+.fc72-trend { font-size:.75rem; line-height:1 }
+.fc72-label { font-family:var(--disp); font-size:.4rem; letter-spacing:.06em }
+.fc72-bar { height:3px; background:rgba(255,255,255,.06); border-radius:2px; overflow:hidden; margin-top:3px }
+.fc72-bar-fill { height:100%; border-radius:2px; transition:width 1s ease }
+
+/* Drivers block */
+.fc72-drivers { padding:4px 9px 6px; border-top:1px solid var(--b0); margin-top:4px }
+.fc72-drivers-hdr { font-family:var(--mono); font-size:.4rem; color:var(--muted); letter-spacing:.08em; margin-bottom:4px }
+.fc72-driver-row { display:flex; align-items:center; gap:5px; padding:2px 0; border-bottom:1px solid rgba(13,51,72,.2) }
+.fc72-driver-dot { width:4px; height:4px; border-radius:50%; flex-shrink:0 }
+.fc72-driver-txt { font-family:var(--mono); font-size:.44rem; color:var(--dim); flex:1 }
+.fc72-driver-cnt { font-family:var(--disp); font-size:.5rem; color:var(--muted) }
+
+/* Model info footer */
+.fc72-model { padding:4px 9px; border-top:1px solid var(--b0); display:flex; justify-content:space-between; font-family:var(--mono); font-size:.38rem; color:var(--muted) }
+.fc72-signals { color:var(--cyan) }
+
+/* ── Heatmap legend ── */
+.fc-legend { display:none; align-items:center; gap:7px; flex:1 }
+.fc-legend.vis { display:flex }
+.fc-leg-grad { width:80px; height:6px; border-radius:3px; background:linear-gradient(90deg,#00ff88,#f5c518,#ff6b1a,#ff2233); flex-shrink:0 }
+.fc-leg-labels { display:flex; justify-content:space-between; font-family:var(--mono); font-size:.38rem; width:80px; flex-shrink:0 }
+.fc-leg-sep { color:var(--muted); font-family:var(--mono); font-size:.42rem }
+
+/* ── Region risk circles on map ── */
+.fc-region-label { font-family:'Orbitron',sans-serif; font-size:.44rem; padding:3px 7px; border:1px solid; white-space:nowrap; background:rgba(2,6,8,.9) }
+
+/* ── Forecast mode banner ── */
+#fc-mode-banner { display:none; position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:800; background:rgba(4,13,18,.95); border:1px solid #9966ff; padding:4px 14px; font-family:'Share Tech Mono',monospace; font-size:.5rem; color:#9966ff; letter-spacing:.12em; pointer-events:none; white-space:nowrap }
+#fc-mode-banner.show { display:block }
+.fc-banner-pulse { animation:fcBlink 2s ease-in-out infinite }
+@keyframes fcBlink { 0%,100%{opacity:1}50%{opacity:.5} }
+
+/* ── Heatmap custom gradient ── */
+.leaflet-heatmap-layer { opacity:0.75 }
+
+/* ── FORECAST button ── */
+.layer-btn.al-forecast { border-color:#9966ff; color:#9966ff; background:rgba(153,102,255,.07) }
+
 </style>
 </head>
 <body>
@@ -1962,7 +2273,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     <div class="radar"></div>
     <div class="hdr-titles">
       <h1>GLOBAL CONFLICT RADAR</h1>
-      <div class="hdr-sub">LIVE GEOPOLITICAL MONITORING · RSS + CLAUDE AI · v4.2</div>
+      <div class="hdr-sub">LIVE GEOPOLITICAL MONITORING · RSS + CLAUDE AI · v4.3</div>
     </div>
   </div>
   <div class="hdr-center">
@@ -1972,6 +2283,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     <button class="layer-btn" onclick="setLayer('travel',this)">✈ TRAVEL</button>
     <button class="layer-btn" onclick="setLayer('alignment',this)">🌐 ALIGNMENT</button>
     <button class="osint-toggle" id="osint-btn" onclick="toggleOsint(this)">🛰 OSINT</button>
+    <button class="layer-btn" id="fc-btn" onclick="setLayer('forecast',this)">⚡ FORECAST</button>
   </div>
   <div class="hdr-right">
     <select class="lang-sel" onchange="setLang(this.value)">
@@ -2063,6 +2375,36 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     </div>
   </div>
 
+  <!-- ESCALATION FORECAST 72H PANEL -->
+  <div class="sec" id="fc72-sec">
+    <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')">
+      <span class="sec-t" style="color:#9966ff">⚡ ESCALATION FORECAST · 72H</span>
+      <div style="display:flex;align-items:center;gap:4px">
+        <span id="fc72-conf-badge" style="font-family:var(--mono);font-size:.4rem;color:var(--muted)">—% conf</span>
+        <span class="arr">▾</span>
+      </div>
+    </div>
+    <div class="sec-body fc72-panel" style="padding:0">
+      <div class="fc72-header">
+        <span class="fc72-title">PREDICTIVE RISK MODEL</span>
+        <span class="fc72-conf" id="fc72-sigs">— signals</span>
+      </div>
+      <div id="fc72-regions">
+        <!-- Populated by JS -->
+        <div style="padding:9px;font-family:var(--mono);font-size:.46rem;color:var(--muted)">Loading forecast…</div>
+      </div>
+      <div class="fc72-drivers" id="fc72-drivers-wrap">
+        <div class="fc72-drivers-hdr">FORECAST DRIVERS</div>
+        <div id="fc72-drivers-list">—</div>
+      </div>
+      <div class="fc72-model">
+        <span>MODEL: rate·0.4 + vel·0.3 + mil·0.2 + dip·0.1</span>
+        <span class="fc72-signals" id="fc72-conf-val">—%</span>
+      </div>
+    </div>
+  </div>
+
+
   <!-- TREND CHART -->
   <div class="sec">
     <div class="sec-h" onclick="this.closest('.sec').classList.toggle('collapsed')"><span class="sec-t">TENSION TREND · 30 DAYS</span><span class="arr">▾</span></div>
@@ -2134,6 +2476,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 
 <!-- ════ MAP CENTER ════ -->
 <div class="map-col">
+  <div id="fc-mode-banner"><span class="fc-banner-pulse">⚡ FORECAST MODE — PREDICTIVE RISK VISUALIZATION</span></div>
   <div id="wmap" style="flex:1;min-height:0"></div>
   <div class="map-footer">
     <!-- LIVE -->
@@ -2170,6 +2513,13 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
       <div class="ll-item" style="color:#00aaff">▪ SIDE B</div>
       <div class="ll-item" style="color:#f5c518">▪ AMBIGUOUS</div>
       <div class="ll-item" style="color:#4a7a99">▪ NEUTRAL</div>
+    </div>
+        <div class="fc-legend" id="leg-forecast">
+      <div class="fc-leg-grad"></div>
+      <div style="display:flex;flex-direction:column;gap:1px">
+        <div class="fc-leg-labels"><span style="color:#00ff88">STABLE</span><span style="color:#f5c518">ELEVATED</span><span style="color:#ff6b1a">HIGH</span><span style="color:#ff2233">CRITICAL</span></div>
+        <div style="font-family:var(--mono);font-size:.38rem;color:var(--muted)">ESCALATION PROBABILITY 72H</div>
+      </div>
     </div>
     <span style="margin-left:auto;color:var(--muted);font-family:var(--mono);font-size:.42rem" id="map-src">—</span>
   </div>
@@ -2862,9 +3212,304 @@ document.addEventListener('DOMContentLoaded',()=>{
   }
   fixH();window.addEventListener('resize',fixH);setTimeout(fixH,500);
 });
+
+// FORECAST EXTENSION
+
+// ═══════════════════════════════════════════════════════════════
+// GEOPOLITICAL FORECAST LAYER v4.3
+// Extension module - no existing functions replaced
+// ═══════════════════════════════════════════════════════════════
+
+let forecastLayer = null;
+let heatLayer = null;
+let fcData = null;
+let isForecastMode = false;
+
+// ── Probability color ───────────────────────────────────────────
+function fcColor(prob) {
+    if (prob >= 0.72) return '#ff2233';
+    if (prob >= 0.50) return '#ff6b1a';
+    if (prob >= 0.30) return '#f5c518';
+    return '#00ff88';
+}
+
+function fcTrendColor(dir) {
+    return dir === 'escalating' ? '#ff2233' : dir === 'decreasing' ? '#00ff88' : '#4a7a99';
+}
+
+// ── Initialize forecast layers ──────────────────────────────────
+function initForecastLayer() {
+    if (!leafMap || forecastLayer) return;
+    forecastLayer = L.layerGroup();
+}
+
+// ── Load Leaflet.heat dynamically ──────────────────────────────
+function loadHeatPlugin(cb) {
+    if (window.HeatLayer || document.querySelector('[data-heat]')) { cb(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js';
+    s.setAttribute('data-heat', '1');
+    s.onload = cb;
+    s.onerror = cb; // fall back gracefully
+    document.head.appendChild(s);
+}
+
+// ── Switch to FORECAST mode ─────────────────────────────────────
+function activateForecastMode() {
+    isForecastMode = true;
+    if (!leafMap) return;
+
+    // Hide all current layers
+    [mLayer, clusterLayer, conflictLayer, tradeLayer, travelLayer, alignLayer].forEach(l => {
+        if (l && leafMap.hasLayer(l)) leafMap.removeLayer(l);
+    });
+
+    // Show mode banner
+    const banner = document.getElementById('fc-mode-banner');
+    if (banner) banner.classList.add('show');
+
+    // Show forecast legend
+    document.querySelectorAll('.layer-legend').forEach(el => el.classList.remove('vis'));
+    const fcLeg = document.getElementById('leg-forecast');
+    if (fcLeg) fcLeg.classList.add('vis');
+
+    // Load and render
+    loadHeatPlugin(() => renderForecastMap(fcData));
+}
+
+// ── Deactivate FORECAST mode ────────────────────────────────────
+function deactivateForecastMode() {
+    isForecastMode = false;
+    if (!leafMap) return;
+
+    // Remove forecast layers
+    if (heatLayer && leafMap.hasLayer(heatLayer)) leafMap.removeLayer(heatLayer);
+    if (forecastLayer && leafMap.hasLayer(forecastLayer)) leafMap.removeLayer(forecastLayer);
+
+    // Hide banner
+    const banner = document.getElementById('fc-mode-banner');
+    if (banner) banner.classList.remove('show');
+}
+
+// ── Render heatmap + region overlays ───────────────────────────
+function renderForecastMap(data) {
+    if (!leafMap || !data) return;
+    if (!forecastLayer) initForecastLayer();
+
+    // Clear previous forecast layers
+    if (heatLayer && leafMap.hasLayer(heatLayer)) leafMap.removeLayer(heatLayer);
+    forecastLayer.clearLayers();
+
+    const points = data.heatmap_points || [];
+    const forecasts = data.forecasts || {};
+
+    // ── Heatmap ──
+    if (window.L && L.heatLayer && points.length) {
+        heatLayer = L.heatLayer(points, {
+            radius: 55,
+            blur: 38,
+            maxZoom: 8,
+            max: 0.95,
+            gradient: {
+                0.0: '#001a00',
+                0.25: '#006600',
+                0.45: '#00aa00',
+                0.58: '#f5c518',
+                0.72: '#ff6b1a',
+                0.88: '#ff2233',
+                1.0: '#8b0000'
+            }
+        });
+        leafMap.addLayer(heatLayer);
+    } else {
+        // Fallback: filled circles if heat plugin failed to load
+        points.forEach(pt => {
+            const [lat, lon, intensity] = pt;
+            const col = fcColor(intensity);
+            L.circle([lat, lon], {
+                radius: 180000,
+                color: 'transparent',
+                fillColor: col,
+                fillOpacity: 0.18 + intensity * 0.22,
+                interactive: false
+            }).addTo(forecastLayer);
+        });
+    }
+
+    // ── Region labels with probability ──
+    Object.entries(forecasts).forEach(([regionName, fr]) => {
+        const REGION_CENTERS = {
+            'Middle East':    [31.5, 35.5],
+            'Eastern Europe': [49.5, 32.0],
+            'East Asia':      [24.5, 121.0],
+            'Horn of Africa': [12.5, 43.5],
+            'West Africa':    [13.0,  2.0],
+            'Mediterranean':  [35.5, 19.0],
+            'South Asia':     [30.0, 70.0],
+            'Central Asia':   [41.0, 63.0],
+        };
+        const center = REGION_CENTERS[regionName];
+        if (!center) return;
+
+        const pct = fr.probability_pct + '%';
+        const col = fr.color || fcColor(fr.probability || 0);
+        const arrow = fr.trend_arrow || '→';
+        const label = fr.label || '';
+
+        // Pulsing circle border
+        L.circle(center, {
+            radius: fr.probability > 0.5 ? 240000 : 180000,
+            color: col,
+            weight: fr.probability > 0.65 ? 2 : 1,
+            opacity: 0.6,
+            fillOpacity: 0,
+            dashArray: fr.probability > 0.65 ? null : '6,4',
+        }).bindPopup(buildFcPopup(regionName, fr)).addTo(forecastLayer);
+
+        // Label marker
+        const icon = L.divIcon({
+            className: '',
+            html: '<div class="fc-region-label" style="border-color:' + col + ';color:' + col + '">'
+                + '<span style="font-family:var(--disp);font-size:.52rem;font-weight:700">' + pct + '</span>'
+                + '<span style="margin-left:4px;font-size:.6rem">' + arrow + '</span><br>'
+                + '<span style="font-size:.38rem;opacity:.8">' + regionName + '</span>'
+                + '</div>',
+            iconAnchor: [0, 0],
+            iconSize: null,
+        });
+        L.marker(center, { icon })
+            .bindPopup(buildFcPopup(regionName, fr))
+            .addTo(forecastLayer);
+    });
+
+    leafMap.addLayer(forecastLayer);
+}
+
+function buildFcPopup(regionName, fr) {
+    const col = fr.color || '#f5c518';
+    const pct = fr.probability_pct + '%';
+    const label = fr.label || '';
+    const arrow = fr.trend_arrow || '→';
+    const drivers = (fr.drivers || []).map(d =>
+        '<div style="font-size:.5rem;color:#4a7a99;padding:1px 0">· ' + d.signal + (d.count ? ' (' + d.count + ')' : '') + '</div>'
+    ).join('');
+
+    return '<div style="font-family:Orbitron,sans-serif;font-size:.55rem;letter-spacing:.12em;color:' + col + ';margin-bottom:4px">'
+        + regionName.toUpperCase() + '</div>'
+        + '<div style="font-family:var(--disp);font-size:1.1rem;font-weight:900;color:' + col + ';margin:2px 0">'
+        + pct + ' <span style="font-size:.7rem">' + arrow + '</span></div>'
+        + '<div style="font-family:var(--disp);font-size:.44rem;padding:1px 5px;border:1px solid ' + col + ';color:' + col + ';display:inline-block;margin-bottom:5px">' + label + '</div>'
+        + '<div style="font-size:.46rem;color:#4a7a99;margin-bottom:3px">FORECAST DRIVERS:</div>'
+        + drivers
+        + '<div style="font-size:.4rem;color:#2a4a5a;margin-top:5px;border-top:1px solid #0d3348;padding-top:3px">72H ESCALATION PROBABILITY · MODEL v4.3</div>';
+}
+
+// ── Render left-panel forecast data ───────────────────────────
+function renderForecastPanel(data) {
+    if (!data) return;
+    fcData = data;
+
+    // Update confidence badge
+    const confBadge = document.getElementById('fc72-conf-badge');
+    if (confBadge) confBadge.textContent = data.confidence + '% conf';
+    const confVal = document.getElementById('fc72-conf-val');
+    if (confVal) confVal.textContent = data.confidence + '%';
+    const sigsEl = document.getElementById('fc72-sigs');
+    if (sigsEl) sigsEl.textContent = (data.signals_analyzed || 0) + ' signals';
+
+    // Regions
+    const regEl = document.getElementById('fc72-regions');
+    const panelRegions = data.panel_regions || ['Middle East', 'Eastern Europe', 'East Asia', 'Horn of Africa', 'West Africa'];
+
+    if (regEl) {
+        regEl.innerHTML = panelRegions.map(rname => {
+            const fr = (data.forecasts || {})[rname];
+            if (!fr) return '';
+            const col = fr.color || '#f5c518';
+            const pct = fr.probability_pct + '%';
+            const trendCol = fcTrendColor(fr.trend_dir || 'stable');
+            const barW = Math.round(fr.probability * 100);
+
+            return '<div class="fc72-region">'
+                + '<div class="fc72-region-top">'
+                + '<span class="fc72-region-name">' + rname + '</span>'
+                + '<div class="fc72-region-meta">'
+                + '<span class="fc72-trend" style="color:' + trendCol + '">' + (fr.trend_arrow || '→') + '</span>'
+                + '<span class="fc72-region-prob" style="color:' + col + '">' + pct + '</span>'
+                + '</div></div>'
+                + '<div class="fc72-label" style="color:' + col + '">' + (fr.label || '') + '</div>'
+                + '<div class="fc72-bar"><div class="fc72-bar-fill" style="width:' + barW + '%;background:' + col + '"></div></div>'
+                + '</div>';
+        }).join('');
+    }
+
+    // Global drivers (from all regions combined)
+    const allDrivers = {};
+    Object.values(data.forecasts || {}).forEach(fr => {
+        (fr.drivers || []).forEach(d => {
+            allDrivers[d.signal] = (allDrivers[d.signal] || 0) + (d.count || 1);
+        });
+    });
+    const topDrivers = Object.entries(allDrivers)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6);
+
+    const drivEl = document.getElementById('fc72-drivers-list');
+    if (drivEl) {
+        const driverColors = ['#ff2233', '#ff6b1a', '#f5c518', '#aaaaff', '#4a7a99', '#2a4a5a'];
+        if (topDrivers.length) {
+            drivEl.innerHTML = topDrivers.map(([sig, cnt], i) =>
+                '<div class="fc72-driver-row">'
+                + '<div class="fc72-driver-dot" style="background:' + (driverColors[i] || '#2a4a5a') + '"></div>'
+                + '<span class="fc72-driver-txt">' + sig + '</span>'
+                + '<span class="fc72-driver-cnt">' + cnt + '</span>'
+                + '</div>'
+            ).join('');
+        } else {
+            drivEl.innerHTML = '<div class="fc72-driver-row"><span class="fc72-driver-txt" style="color:var(--muted)">Baseline monitoring active</span></div>';
+        }
+    }
+
+    // If already in forecast mode, re-render map
+    if (isForecastMode) {
+        loadHeatPlugin(() => renderForecastMap(data));
+    }
+}
+
+// ── Patch setLayer to handle FORECAST ─────────────────────────
+const _setLayerBase = setLayer;
+function setLayer(name, btn) {
+    if (name === 'forecast') {
+        // Handle forecast separately
+        currentLayer = 'forecast';
+        document.querySelectorAll('.layer-btn').forEach(b => b.className = 'layer-btn');
+        if (btn) btn.className = 'layer-btn al-forecast';
+        activateForecastMode();
+        return;
+    }
+    if (isForecastMode) {
+        deactivateForecastMode();
+    }
+    _setLayerBase(name, btn);
+}
+
+// ── Patch loadAll to also fetch forecast data ──────────────────
+const _loadAllFc = loadAll;
+async function loadAll() {
+    await _loadAllFc();
+    try {
+        const fd = await fetch('/api/forecast-geo').then(r => r.json());
+        renderForecastPanel(fd);
+    } catch(e) {
+        console.warn('[FORECAST] load failed', e);
+    }
+    initForecastLayer();
+}
+
 </script>
 </body>
 </html>
+
 
 """
 
