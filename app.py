@@ -1620,7 +1620,9 @@ async def api_forecast_geo():
     }
 
 
-HTML_PAGE = """
+HTML_PAGE = """HTML_PAGE = r"""
+
+
 <!DOCTYPE html>
 <html lang="en" dir="ltr">
 <head>
@@ -1971,6 +1973,26 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .intel-loading{text-align:center;padding:28px 20px;font-family:var(--mono);font-size:.54rem;color:var(--dim)}
 .intel-spinner{font-size:1rem;color:var(--cyan);animation:spin 1.5s linear infinite;display:block;margin-bottom:7px}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── MOBILE ── */
+@media (max-width: 768px) {
+  .shell{flex-direction:column;height:auto;overflow:auto}
+  .left-panel{width:100%;max-height:40vh;overflow-y:auto;border-right:none;border-bottom:1px solid var(--b0);order:2}
+  .map-col{height:50vh;min-height:280px;order:1;flex:none}
+  .right-panel{width:100%;max-height:none;border-left:none;border-top:1px solid var(--b0);order:3}
+  #wmap{height:100%!important}
+  .hdr{padding:5px 8px;flex-wrap:wrap;gap:4px}
+  .nav-tabs{gap:3px;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}
+  .layer-btn{font-size:.42rem;padding:3px 7px}
+  .hdr-titles h1{font-size:.8rem}
+  .timeline-bar{display:none}
+}
+@media (max-width: 480px) {
+  .map-col{height:45vh}
+  .left-panel{max-height:35vh}
+  .hdr-titles h1{font-size:.65rem}
+  .hdr-sub{display:none}
+}
 </style>
 </head>
 <body>
@@ -1986,8 +2008,8 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
   <div class="hdr-left">
     <div class="radar"></div>
     <div class="hdr-titles">
-      <h1>GLOBAL CONFLICT RADAR</h1>
-      <div class="hdr-sub">LIVE GEOPOLITICAL MONITORING · RSS + CLAUDE AI · v4.3</div>
+      <h1 id="gtm-title">GLOBAL CONFLICT RADAR</h1>
+      <div class="hdr-sub" id="gtm-sub">LIVE GEOPOLITICAL MONITORING · RSS + CLAUDE AI · v4.3</div>
     </div>
   </div>
   <div class="hdr-center">
@@ -2829,7 +2851,100 @@ async function playLast24h(){await loadRepHistory();repIdx=0;document.getElement
 function goLive(){stopReplay();document.getElementById('rep-ts').textContent='LIVE';document.getElementById('rep-slider').value=replayHistory.length||100;renderMap(allEvents)}
 
 // ════════════ LANG STUB ════════════
-function setLang(lang){document.documentElement.setAttribute('lang',lang);document.documentElement.setAttribute('dir',lang==='ar'?'rtl':'ltr')}
+
+// ── TRANSLATIONS ──────────────────────────────────────────────
+var LANG = 'en';
+var T = {
+  en: {
+    title:'GLOBAL CONFLICT RADAR', sub:'LIVE GEOPOLITICAL MONITORING · RSS + CLAUDE AI',
+    snapshot:'GLOBAL RISK SNAPSHOT', briefing:'DAILY INTEL BRIEFING',
+    gti:'GLOBAL TENSION INDEX', velocity:'ESCALATION VELOCITY',
+    forecast72:'ESCALATION FORECAST · 72H', riskModel:'PREDICTIVE RISK MODEL',
+    trend:'TENSION TREND', live:'LIVE', conflicts:'CONFLICTS',
+    trade:'TRADE', travel:'TRAVEL', alignment:'ALIGNMENT', osint:'OSINT', forecastBtn:'FORECAST',
+    persConflicts:'PERSISTENT CONFLICTS', globalAlign:'GLOBAL ALIGNMENT',
+    tradeLog:'TRADE & LOGISTICS', chokeTitle:'CHOKEPOINT TRAFFIC LEVELS',
+    stratMon:'STRATEGIC MONITOR', supplyRisk:'SUPPLY CHAIN RISK',
+    travelSafe:'TRAVEL SAFETY', recentEvt:'RECENT EVENTS', sysTrans:'SYSTEM TRANSPARENCY'
+  },
+  sk: {
+    title:'GLOBÁLNY RADAR KONFLIKTOV', sub:'LIVE GEOPOLITICKÉ MONITOROVANIE · RSS + CLAUDE AI',
+    snapshot:'GLOBÁLNY PREHĽAD RIZÍK', briefing:'DENNÝ SPRAVODAJSKÝ BRÍFING',
+    gti:'GLOBÁLNY INDEX NAPÄTIA', velocity:'RÝCHLOSŤ ESKALÁCIE',
+    forecast72:'PREDPOVEĎ ESKALÁCIE · 72H', riskModel:'MODEL PREDIKTÍVNEHO RIZIKA',
+    trend:'TREND NAPÄTIA', live:'LIVE', conflicts:'KONFLIKTY',
+    trade:'OBCHOD', travel:'CESTOVANIE', alignment:'ZOSÚLADENIE', osint:'OSINT', forecastBtn:'PREDPOVEĎ',
+    persConflicts:'AKTÍVNE KONFLIKTY', globalAlign:'GLOBÁLNE ZOSÚLADENIE',
+    tradeLog:'OBCHOD & LOGISTIKA', chokeTitle:'OBCHODNÉ KORIDORY',
+    stratMon:'STRATEGICKÝ MONITOR', supplyRisk:'RIZIKO DODÁVATEĽSKÉHO REŤAZCA',
+    travelSafe:'BEZPEČNOSŤ CESTOVANIA', recentEvt:'POSLEDNÉ UDALOSTI', sysTrans:'TRANSPARENTNOSŤ'
+  },
+  de: {
+    title:'GLOBALER KONFLIKT RADAR', sub:'LIVE GEOPOLITISCHES MONITORING · RSS + CLAUDE AI',
+    snapshot:'GLOBALER RISIKOÜBERBLICK', briefing:'TÄGLICHES GEHEIMDIENSTBRIEFING',
+    gti:'GLOBALER SPANNUNGSINDEX', velocity:'ESKALATIONSGESCHWINDIGKEIT',
+    forecast72:'ESKALATIONSPROGNOSE · 72H', riskModel:'PRÄDIKTIVES RISIKOMODELL',
+    trend:'SPANNUNGSTREND', live:'LIVE', conflicts:'KONFLIKTE',
+    trade:'HANDEL', travel:'REISE', alignment:'AUSRICHTUNG', osint:'OSINT', forecastBtn:'PROGNOSE',
+    persConflicts:'PERSISTENTE KONFLIKTE', globalAlign:'GLOBALE AUSRICHTUNG',
+    tradeLog:'HANDEL & LOGISTIK', chokeTitle:'ENGPASS-VERKEHRSNIVEAUS',
+    stratMon:'STRATEGISCHER MONITOR', supplyRisk:'LIEFERKETTENRISIKO',
+    travelSafe:'REISESICHERHEIT', recentEvt:'AKTUELLE EREIGNISSE', sysTrans:'TRANSPARENZ'
+  },
+  uk: {
+    title:'ГЛОБАЛЬНИЙ РАДАР КОНФЛІКТІВ', sub:'МОНІТОРИНГ · RSS + CLAUDE AI',
+    snapshot:'ОГЛЯД ГЛОБАЛЬНИХ РИЗИКІВ', briefing:'ЩОДЕННИЙ БРИФІНГ',
+    gti:'ГЛОБАЛЬНИЙ ІНДЕКС НАПРУГИ', velocity:'ШВИДКІСТЬ ЕСКАЛАЦІЇ',
+    forecast72:'ПРОГНОЗ ЕСКАЛАЦІЇ · 72Г', riskModel:'ПРОГНОСТИЧНА МОДЕЛЬ РИЗИКУ',
+    trend:'ТРЕНД НАПРУГИ', live:'НАЖИВО', conflicts:'КОНФЛІКТИ',
+    trade:'ТОРГІВЛЯ', travel:'ПОДОРОЖІ', alignment:'ВИРІВНЮВАННЯ', osint:'ОСІНТ', forecastBtn:'ПРОГНОЗ',
+    persConflicts:'АКТИВНІ КОНФЛІКТИ', globalAlign:'ГЛОБАЛЬНЕ ВИРІВНЮВАННЯ',
+    tradeLog:'ТОРГІВЛЯ & ЛОГІСТИКА', chokeTitle:'ТРАНСПОРТНІ КОРИДОРИ',
+    stratMon:'СТРАТЕГІЧНИЙ МОНІТОР', supplyRisk:'РИЗИК ЛАНЦЮГА ПОСТАВОК',
+    travelSafe:'БЕЗПЕКА ПОДОРОЖЕЙ', recentEvt:'ОСТАННІ ПОДІЇ', sysTrans:'ПРОЗОРІСТЬ'
+  }
+};
+
+function applyTranslations(lang) {
+  var t = T[lang] || T['en'];
+  var map = {
+    'h1': t.title,
+    '.hdr-sub': t.sub,
+    '#snap-title': t.snapshot,
+    '#briefing-title': t.briefing,
+    '#gti-title': t.gti,
+    '#vel-title': t.velocity,
+    '#fc72-title': t.forecast72,
+    '#trend-title': t.trend
+  };
+  Object.entries(map).forEach(function(e) {
+    var el = document.querySelector(e[0]);
+    if (el) el.textContent = e[1];
+  });
+  // Nav buttons
+  var btns = document.querySelectorAll('.layer-btn');
+  var navKeys = ['live','conflicts','trade','travel','alignment','forecastBtn'];
+  btns.forEach(function(btn, idx) {
+    var key = navKeys[idx];
+    if (key && t[key]) btn.childNodes[btn.childNodes.length-1].textContent = ' ' + t[key];
+  });
+  // Right panel section titles
+  var secTitles = document.querySelectorAll('.sec-t');
+  var secKeys = ['persConflicts','globalAlign','tradeLog','chokeTitle','stratMon','supplyRisk','travelSafe','recentEvt','sysTrans'];
+  secTitles.forEach(function(el, idx) {
+    if (secKeys[idx] && t[secKeys[idx]] && !el.style.color) el.textContent = t[secKeys[idx]];
+  });
+}
+
+function setLang(lang){
+  LANG = lang;
+  document.documentElement.setAttribute('lang',lang);
+  document.documentElement.setAttribute('dir',lang==='ar'?'rtl':'ltr');
+  applyTranslations(lang);
+  // Update select to show chosen language
+  var sel = document.querySelector('.lang-sel');
+  if (sel) sel.value = lang;
+}
 
 // ════════════ MAIN LOAD ════════════
 async function loadAll(){
@@ -2972,10 +3087,18 @@ function activateForecastMode() {
             if (l && leafMap.hasLayer(l)) leafMap.removeLayer(l);
         });
     }
-    if (forecastLayer && typeof leafMap !== 'undefined' && leafMap) {
+    if (!forecastLayer) forecastLayer = L.layerGroup();
+    if (typeof leafMap !== 'undefined' && leafMap) {
         leafMap.addLayer(forecastLayer);
     }
-    if (fcData) renderForecastMap(fcData);
+    if (fcData) {
+        renderForecastPanel(fcData);
+        renderForecastMap(fcData);
+    } else {
+        fetch('/api/forecast-geo').then(function(r){ return r.json(); })
+            .then(function(data){ renderForecastPanel(data); renderForecastMap(data); })
+            .catch(function(){});
+    }
 }
 
 function deactivateForecastMode() {
@@ -3096,13 +3219,15 @@ setLayer = function(name, btn) {
 
 // ── Load forecast data after page ready ───────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
-    // Load forecast data separately - doesn't affect main loadAll
     setTimeout(function() {
         fetch('/api/forecast-geo')
             .then(function(r){ return r.json(); })
-            .then(renderForecastPanel)
+            .then(function(data) {
+                renderForecastPanel(data);
+                if (!forecastLayer) forecastLayer = L.layerGroup();
+            })
             .catch(function(){});
-    }, 2000);
+    }, 1500);
 });
 
 </script>
@@ -3111,7 +3236,11 @@ document.addEventListener('DOMContentLoaded', function() {
 </body>
 </html>
 
+
+
 """
+
+
 
 
 @app.get("/", response_class=HTMLResponse)
