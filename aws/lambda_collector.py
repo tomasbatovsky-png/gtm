@@ -84,7 +84,7 @@ def stable_hash(value: str, length: int = 24) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:length]
 
 
-def _fetch_gdelt_url(query: str, timespan: str, maxrecords: str = "75") -> Dict[str, Any]:
+def _fetch_gdelt_url(query: str, timespan: str, maxrecords: str = "100") -> Dict[str, Any]:
     params = {
         "query": query,
         "mode": "artlist",
@@ -94,7 +94,7 @@ def _fetch_gdelt_url(query: str, timespan: str, maxrecords: str = "75") -> Dict[
         "sort": "hybridrel",
     }
     url = "https://api.gdeltproject.org/api/v2/doc/doc?" + urllib.parse.urlencode(params)
-    request = urllib.request.Request(url, headers={"User-Agent": "global-tension-monitor-aws-lambda/0.2"})
+    request = urllib.request.Request(url, headers={"User-Agent": "global-tension-monitor-aws-lambda/0.3"})
     with urllib.request.urlopen(request, timeout=25) as response:
         body = response.read().decode("utf-8", errors="replace").strip()
 
@@ -115,34 +115,44 @@ def _fetch_gdelt_url(query: str, timespan: str, maxrecords: str = "75") -> Dict[
 
 
 def fetch_gdelt_articles() -> Dict[str, Any]:
-    """Fetch GDELT data with safe fallbacks.
+    """Fetch GDELT data with broad fallbacks.
 
-    GDELT occasionally returns an empty body for strict/complex queries. This function
-    retries with broader query/time windows instead of failing the whole Lambda.
+    GDELT may reject very short windows and may return zero results for complex
+    boolean queries. This function only returns success when it finds articles;
+    otherwise it continues to broader queries/time windows.
     """
     attempts = [
-        ("war OR conflict OR escalation OR military OR sanctions OR missile OR border OR protest OR naval OR airstrike OR drone", "15min", "75"),
-        ("war conflict escalation military sanctions missile border protest", "1hour", "75"),
-        ("conflict military", "6hours", "50"),
+        ("conflict", "1hour", "100"),
+        ("war", "1hour", "100"),
+        ("military", "1hour", "100"),
+        ("conflict", "24hours", "100"),
+        ("war", "24hours", "100"),
+        ("military", "24hours", "100"),
+        ("ukraine OR gaza OR israel OR russia OR taiwan", "24hours", "100"),
     ]
     errors: List[str] = []
+    empty_payloads: List[Dict[str, Any]] = []
 
     for query, timespan, maxrecords in attempts:
         try:
             data = _fetch_gdelt_url(query=query, timespan=timespan, maxrecords=maxrecords)
-            data.setdefault("articles", [])
-            data["_collector_status"] = "ok"
-            if errors:
-                data["_collector_previous_errors"] = errors
-            return data
+            articles = data.get("articles", []) or []
+            if articles:
+                data["_collector_status"] = "ok"
+                data["_collector_attempt"] = {"query": query, "timespan": timespan, "articles": len(articles)}
+                if errors:
+                    data["_collector_previous_errors"] = errors
+                return data
+            empty_payloads.append({"query": query, "timespan": timespan, "articles": 0})
+            print(f"[GDELT empty] query={query!r} timespan={timespan!r}")
         except Exception as exc:
             errors.append(str(exc))
             print(f"[GDELT retry] {exc}")
 
-    # Still return a valid payload so S3/CloudWatch show the failure cleanly.
     return {
         "articles": [],
-        "_collector_status": "gdelt_fetch_failed",
+        "_collector_status": "ok_no_articles",
+        "_collector_empty_attempts": empty_payloads,
         "_collector_errors": errors,
         "_request": {"attempts": len(attempts)},
     }
@@ -262,6 +272,7 @@ def lambda_handler(event: Optional[Dict[str, Any]], context: Any) -> Dict[str, A
         "statusCode": 200,
         "source": "GDELT_DOC",
         "collector_status": payload.get("_collector_status", "unknown"),
+        "collector_attempt": payload.get("_collector_attempt"),
         "raw_s3_key": raw_s3_key,
         "articles_received": len(articles),
         "items_written": written,
@@ -274,5 +285,7 @@ def lambda_handler(event: Optional[Dict[str, Any]], context: Any) -> Dict[str, A
         result["collector_errors"] = payload["_collector_errors"]
     if payload.get("_collector_previous_errors"):
         result["collector_previous_errors"] = payload["_collector_previous_errors"]
+    if payload.get("_collector_empty_attempts"):
+        result["collector_empty_attempts"] = payload["_collector_empty_attempts"]
     print(json.dumps(result))
     return result
