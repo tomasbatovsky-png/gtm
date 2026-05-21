@@ -6,14 +6,14 @@ environment variables are present. If AWS is not configured, the app should keep
 using its current in-memory fallback.
 
 Required Render environment variables:
-- AWS_REGION=eu-central-1
+- AWS_REGION=eu-north-1
 - GTM_EVENTS_TABLE=gtm_events
 - AWS_ACCESS_KEY_ID=<render-readonly-access-key>
 - AWS_SECRET_ACCESS_KEY=<render-readonly-secret>
 """
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 try:
     import boto3
@@ -23,7 +23,7 @@ except Exception:  # pragma: no cover - allows safe import without boto3 install
     Key = None
 
 
-AWS_REGION = os.environ.get("AWS_REGION", "eu-central-1")
+AWS_REGION = os.environ.get("AWS_REGION", "eu-north-1")
 GTM_EVENTS_TABLE = os.environ.get("GTM_EVENTS_TABLE", "gtm_events")
 AWS_ENABLED = os.environ.get("GTM_AWS_ENABLED", "false").lower() in {"1", "true", "yes"}
 
