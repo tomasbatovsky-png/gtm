@@ -9,7 +9,7 @@ Purpose:
 Environment variables required in AWS Lambda:
 - GTM_EVENTS_TABLE=gtm_events
 - GTM_RAW_BUCKET=<your-s3-bucket-name>
-- AWS_REGION=eu-central-1
+- AWS_REGION=eu-north-1
 
 IAM permissions required:
 - s3:PutObject on the raw bucket
@@ -32,7 +32,7 @@ import boto3
 
 TABLE_NAME = os.environ.get("GTM_EVENTS_TABLE", "gtm_events")
 BUCKET_NAME = os.environ["GTM_RAW_BUCKET"]
-AWS_REGION = os.environ.get("AWS_REGION", "eu-central-1")
+AWS_REGION = os.environ.get("AWS_REGION", "eu-north-1")
 
 s3 = boto3.client("s3", region_name=AWS_REGION)
 dynamodb = boto3.resource("dynamodb", region_name=AWS_REGION)
