@@ -9,11 +9,11 @@ Purpose:
 Environment variables required in AWS Lambda:
 - GTM_EVENTS_TABLE=gtm_events
 - GTM_RAW_BUCKET=<your-s3-bucket-name>
-- AWS_REGION=eu-north-1
+- AWS_REGION is set automatically by Lambda; defaults to eu-north-1 in code
 
 IAM permissions required:
 - s3:PutObject on the raw bucket
-- dynamodb:PutItem on the events table
+- dynamodb:PutItem / dynamodb:BatchWriteItem on the events table
 - logs:* basic Lambda logging permissions
 """
 
@@ -84,20 +84,68 @@ def stable_hash(value: str, length: int = 24) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:length]
 
 
-def fetch_gdelt_articles() -> Dict[str, Any]:
-    query = "(war OR conflict OR escalation OR military OR sanctions OR missile OR border OR protest OR naval OR airstrike OR drone)"
+def _fetch_gdelt_url(query: str, timespan: str, maxrecords: str = "75") -> Dict[str, Any]:
     params = {
         "query": query,
         "mode": "artlist",
         "format": "json",
-        "maxrecords": "75",
-        "timespan": "15min",
+        "maxrecords": maxrecords,
+        "timespan": timespan,
         "sort": "hybridrel",
     }
     url = "https://api.gdeltproject.org/api/v2/doc/doc?" + urllib.parse.urlencode(params)
-    request = urllib.request.Request(url, headers={"User-Agent": "global-tension-monitor-aws-lambda/0.1"})
+    request = urllib.request.Request(url, headers={"User-Agent": "global-tension-monitor-aws-lambda/0.2"})
     with urllib.request.urlopen(request, timeout=25) as response:
-        return json.loads(response.read().decode("utf-8"))
+        body = response.read().decode("utf-8", errors="replace").strip()
+
+    if not body:
+        raise ValueError(f"GDELT returned empty response for query={query!r}, timespan={timespan!r}")
+
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError as exc:
+        preview = body[:300].replace("\n", " ")
+        raise ValueError(f"GDELT returned non-JSON response. Preview: {preview}") from exc
+
+    if not isinstance(data, dict):
+        raise ValueError("GDELT returned JSON, but not an object")
+
+    data["_request"] = {"query": query, "timespan": timespan, "url": url}
+    return data
+
+
+def fetch_gdelt_articles() -> Dict[str, Any]:
+    """Fetch GDELT data with safe fallbacks.
+
+    GDELT occasionally returns an empty body for strict/complex queries. This function
+    retries with broader query/time windows instead of failing the whole Lambda.
+    """
+    attempts = [
+        ("war OR conflict OR escalation OR military OR sanctions OR missile OR border OR protest OR naval OR airstrike OR drone", "15min", "75"),
+        ("war conflict escalation military sanctions missile border protest", "1hour", "75"),
+        ("conflict military", "6hours", "50"),
+    ]
+    errors: List[str] = []
+
+    for query, timespan, maxrecords in attempts:
+        try:
+            data = _fetch_gdelt_url(query=query, timespan=timespan, maxrecords=maxrecords)
+            data.setdefault("articles", [])
+            data["_collector_status"] = "ok"
+            if errors:
+                data["_collector_previous_errors"] = errors
+            return data
+        except Exception as exc:
+            errors.append(str(exc))
+            print(f"[GDELT retry] {exc}")
+
+    # Still return a valid payload so S3/CloudWatch show the failure cleanly.
+    return {
+        "articles": [],
+        "_collector_status": "gdelt_fetch_failed",
+        "_collector_errors": errors,
+        "_request": {"attempts": len(attempts)},
+    }
 
 
 def classify_event(text: str) -> str:
@@ -213,12 +261,18 @@ def lambda_handler(event: Optional[Dict[str, Any]], context: Any) -> Dict[str, A
     result = {
         "statusCode": 200,
         "source": "GDELT_DOC",
+        "collector_status": payload.get("_collector_status", "unknown"),
         "raw_s3_key": raw_s3_key,
         "articles_received": len(articles),
         "items_written": written,
         "ingested_at": ingested_at,
         "table": TABLE_NAME,
         "bucket": BUCKET_NAME,
+        "region": AWS_REGION,
     }
+    if payload.get("_collector_errors"):
+        result["collector_errors"] = payload["_collector_errors"]
+    if payload.get("_collector_previous_errors"):
+        result["collector_previous_errors"] = payload["_collector_previous_errors"]
     print(json.dumps(result))
     return result
